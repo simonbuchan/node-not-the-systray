@@ -1,0 +1,13 @@
+{
+    "name": "@simonbuchan/tray",
+    "private": true,
+    "gypfile": false,
+    "scripts": {
+        "install": "echo using pre-built",
+        "rebuild": "node-gyp rebuild",
+        "build": "node-gyp build --silent"
+    },
+    "devDependencies": {
+        "node-gyp": "^3.8.0"
+    }
+}
