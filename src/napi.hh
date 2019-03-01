@@ -11,6 +11,7 @@
 #include "napi-props.hh"
 #include "napi-value.hh"
 #include "napi-win32.hh"
+#include "napi-wrap.hh"
 
 template <typename... T>
 inline napi_status napi_get_required_args(napi_env env, napi_callback_info info, T*... results)

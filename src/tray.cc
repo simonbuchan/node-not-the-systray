@@ -176,6 +176,8 @@ struct notify_icon_options
     std::optional<std::wstring> tooltip;
     std::optional<notification_options> notification;
 
+    std::optional<MenuObject::Ref> context_menu_ref;
+
     std::optional<NapiAsyncCallback> select_callback;
 };
 
@@ -212,6 +214,7 @@ napi_status get_icon_options_common(napi_env env, napi_value value, notify_icon_
     NAPI_RETURN_IF_NOT_OK(napi_get_named_property(env, value, "notificationIcon", &options->balloon_icon_id));
     NAPI_RETURN_IF_NOT_OK(napi_get_named_property(env, value, "hidden", &options->hidden));
     NAPI_RETURN_IF_NOT_OK(napi_get_named_property(env, value, "notification", &options->notification));
+    NAPI_RETURN_IF_NOT_OK(napi_get_named_property(env, value, "contextMenu", &options->context_menu_ref));
     NAPI_RETURN_IF_NOT_OK(napi_get_named_property(env, value, "onSelect", &options->select_callback));
     return napi_ok;
 }
@@ -311,6 +314,9 @@ bool apply_options(notify_icon_options* options, NOTIFYICONDATAW* nid, IconData*
         icon_data->custom_balloon_icon = options->balloon_icon_id->is_shared() ? nullptr : icon;
     }
 
+    if (options->context_menu_ref)
+        icon_data->context_menu_ref = std::move(options->context_menu_ref.value());
+
     if (options->select_callback)
         icon_data->select_callback = std::move(options->select_callback.value());
 
@@ -332,7 +338,7 @@ napi_value export_add(napi_env env, napi_callback_info info)
         napi_throw_range_error(env, nullptr, "id out of range, must be between 1 and 0xFFFE.");
     }
 
-    auto env_data = get_or_create_env_data(env);
+    auto env_data = get_env_data(env);
 
     if (env_data->icons.empty())
     {
@@ -343,9 +349,6 @@ napi_value export_add(napi_env env, napi_callback_info info)
     icon_data->env = env;
     icon_data->id = id;
     icon_data->guid = guid;
-    icon_data->menu = CreatePopupMenu();
-    AppendMenu(icon_data->menu, 0, 1, L"Example Item");
-    AppendMenu(icon_data->menu, MF_CHECKED, 2, L"Example Checked");
 
     NOTIFYICONDATAW nid = { sizeof(nid) };
     nid.uID = id;
@@ -395,7 +398,8 @@ napi_value export_update(napi_env env, napi_callback_info info)
     notify_icon_options options;
     NAPI_RETURN_NULL_IF_NOT_OK(napi_get_args(env, info, 2, &id, &options));
 
-    auto icon_data = get_icon_data(env, id);
+    auto env_data = get_env_data(env);
+    auto icon_data = env_data->get_icon_data(id);
     if (!icon_data)
     {
         napi_throw_error(env, nullptr, "invalid id.");
@@ -430,7 +434,7 @@ napi_value export_remove(napi_env env, napi_callback_info info)
     NAPI_RETURN_NULL_IF_NOT_OK(napi_get_args(env, info, 1, &id));
 
     auto env_data = get_env_data(env);
-    auto icon_data = get_icon_data(env, id);
+    auto icon_data = env_data->get_icon_data(id);
     if (!icon_data)
     {
         // Don't error, delete should be idempotent.
@@ -454,6 +458,36 @@ napi_value export_remove(napi_env env, napi_callback_info info)
     }
 
     return nullptr;
+}
+
+napi_value export_createMenuFromTemplate(napi_env env, napi_callback_info info)
+{
+    napi_value value;
+    NAPI_RETURN_NULL_IF_NOT_OK(napi_get_required_args(env, info, &value));
+
+    void* data = nullptr;
+    size_t length = 0;
+    NAPI_THROW_RETURN_NULL_IF_NOT_OK(env, napi_get_buffer_info(env, value, &data, &length));
+
+    MenuHandle menu = LoadMenuIndirectW(data);
+    if (!menu)
+    {
+        napi_throw_win32_error(env, "LoadMenuIndirectW");
+        return nullptr;
+    }
+
+    auto env_data = get_env_data(env);
+
+    if (auto [status, wrapper, wrapped] = MenuObject::new_instance(env_data, std::move(menu));
+        status != napi_ok)
+    {
+        napi_throw_last_error(env);
+        return nullptr;
+    }
+    else
+    {
+        return wrapper;
+    }
 }
 
 napi_status create_builtin_icons(napi_env env, napi_value* result)
@@ -480,6 +514,19 @@ napi_status create_builtin_icons(napi_env env, napi_value* result)
 
 NAPI_MODULE_INIT()
 {
+    if (auto [status, env_data] = create_env_data(env); status != napi_ok)
+    {
+        napi_throw_last_error(env);
+        return nullptr;
+    }
+    else
+    {
+        NAPI_THROW_RETURN_NULL_IF_NOT_OK(env, MenuObject::define_class(
+            env,
+            "Menu",
+            &env_data->menu_constructor));
+    }
+
     napi_value icons;
     NAPI_THROW_RETURN_NULL_IF_NOT_OK(env, create_builtin_icons(env, &icons));
     NAPI_THROW_RETURN_NULL_IF_NOT_OK(env, napi_define_properties(env, exports,
@@ -488,6 +535,7 @@ NAPI_MODULE_INIT()
         EXPORT_METHOD(add),
         EXPORT_METHOD(update),
         EXPORT_METHOD(remove),
+        EXPORT_METHOD(createMenuFromTemplate),
     }));
     return exports;
 }

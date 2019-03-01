@@ -1,17 +1,24 @@
 #include "data.hh"
 
+#include <map>
+#include <mutex>
+
 // Hack to get the DLL instance without a DllMain()
 EXTERN_C IMAGE_DOS_HEADER __ImageBase;
 #pragma warning(disable: 4047)
 HINSTANCE hInstance = (HINSTANCE)&__ImageBase;
 #pragma warning(default: 4047)
 
-std::unordered_map<napi_env, EnvData> env_datas;
+// If you have multiple environments in one process,
+// then you have multiple threads.
+static std::mutex env_datas_mutex;
+// Must be map<> for the invalidation guarantees
+static std::map<napi_env, EnvData> env_datas;
 
-template <typename K, typename V>
-V* try_get(std::unordered_map<K, V>& items, K key)
+EnvData* get_env_data(napi_env env)
 {
-    if (auto it = items.find(key); it != items.end())
+    std::lock_guard lock{env_datas_mutex};
+    if (auto it = env_datas.find(env); it != env_datas.end())
     {
         return &it->second;
     }
@@ -19,16 +26,11 @@ V* try_get(std::unordered_map<K, V>& items, K key)
     return nullptr;
 }
 
-EnvData* get_env_data(napi_env env)
-{
-    return try_get(env_datas, env);
-}
-
 IconData* get_icon_data(napi_env env, int32_t icon_id)
 {
     if (auto env_data = get_env_data(env); env_data)
     {
-        return try_get(env_data->icons, icon_id);
+        return env_data->get_icon_data(icon_id);
     }
 
     return nullptr;
@@ -40,7 +42,7 @@ IconData* get_icon_data_by_menu(napi_env env, HMENU menu, int32_t item_id)
     {
         for (auto& entry : env_data->icons)
         {
-            if (entry.second.menu == menu)
+            if (entry.second.context_menu_ref.wrapped->menu == menu)
             {
                 return &entry.second;
             }
@@ -48,6 +50,38 @@ IconData* get_icon_data_by_menu(napi_env env, HMENU menu, int32_t item_id)
     }
 
     return nullptr;
+}
+
+static void message_pump_idle_cb(uv_idle_t* idle)
+{
+    auto data = (EnvData*) idle->data;
+
+    MSG msg;
+    while (PeekMessage(&msg, data->msg_hwnd, 0, 0, PM_REMOVE))
+    {
+        TranslateMessage(&msg);
+        DispatchMessage(&msg);
+    }
+}
+
+IconData* EnvData::get_icon_data(int32_t icon_id)
+{
+    if (auto it = icons.find(icon_id); it != icons.end())
+    {
+        return &it->second;
+    }
+
+    return nullptr;
+}
+
+void EnvData::start_message_pump()
+{
+    uv_idle_start(&message_pump_idle, &message_pump_idle_cb);
+}
+
+void EnvData::stop_message_pump()
+{
+    uv_idle_start(&message_pump_idle, &message_pump_idle_cb);
 }
 
 LRESULT messageWndProc(HWND hwnd, UINT msg, WPARAM wparam, LPARAM lparam)
@@ -73,12 +107,15 @@ LRESULT messageWndProc(HWND hwnd, UINT msg, WPARAM wparam, LPARAM lparam)
                     auto env = (napi_env) (void*) GetWindowLongPtrW(hwnd, GWLP_USERDATA);
                     auto icon_id = HIWORD(lparam);
                     if (auto icon_data = get_icon_data(env, icon_id);
-                        icon_data && icon_data->menu)
+                        icon_data && icon_data->context_menu_ref.wrapped)
                     {
                         // Required to hide menu after select or click-outside.
                         SetForegroundWindow(hwnd);
+                        HMENU menu = GetSubMenu(icon_data->context_menu_ref.wrapped->menu, 0);
+                        // HMENU menu = icon_data->context_menu;
+
                         auto item_id = (int32_t)TrackPopupMenuEx(
-                            icon_data->menu,
+                            menu,
                             GetSystemMetrics(SM_MENUDROPALIGNMENT) | TPM_RETURNCMD | TPM_NONOTIFY,
                             // needs sign-extension for multiple monitors
                             (int16_t)LOWORD(wparam),
@@ -115,17 +152,34 @@ LRESULT messageWndProc(HWND hwnd, UINT msg, WPARAM wparam, LPARAM lparam)
 
 ATOM windowClassId = 0;
 
-EnvData* get_or_create_env_data(napi_env env)
+std::tuple<napi_status, EnvData*> create_env_data(napi_env env)
 {
-    if (auto data = get_env_data(env); data)
+    // Lock for the whole method just so we know we'll get
+    // a consistent EnvData.
+    std::lock_guard lock{env_datas_mutex};
+    auto data = &env_datas[env];
+    data->env = env;
+
+    if (auto status = napi_add_env_cleanup_hook(
+            env,
+            [](void* args)
+            {
+                std::lock_guard lock{env_datas_mutex};
+                // This will also fire all the required destructors.
+                env_datas.erase((napi_env) args);
+            },
+            env);
+        status != napi_ok)
     {
-        return data;
+        return {status, nullptr};
     }
 
-    auto data = &env_datas[env];
-
     uv_loop_s* loop = nullptr;
-    napi_get_uv_event_loop(env, &loop);
+    if (auto status = napi_get_uv_event_loop(env, &loop);
+        status != napi_ok)
+    {
+        return {status, nullptr};
+    }
     uv_idle_init(loop, &data->message_pump_idle);
 
     if (!windowClassId)
@@ -135,6 +189,11 @@ EnvData* get_or_create_env_data(napi_env env)
         wc.lpfnWndProc = messageWndProc;
         wc.hInstance = hInstance;
         windowClassId = RegisterClassW(&wc);
+        if (!windowClassId)
+        {
+            napi_throw_win32_error(env, "RegisterClassW");
+            return {napi_pending_exception, data};
+        }
     }
 
     HWND hwnd = CreateWindowW(
@@ -149,18 +208,13 @@ EnvData* get_or_create_env_data(napi_env env)
         nullptr, // menu
         hInstance, // instance
         env); // param
+    if (!hwnd)
+    {
+        napi_throw_win32_error(env, "CreateWindowW");
+        return {napi_pending_exception, data};
+    }
 
-    data->env = env;
     data->msg_hwnd = hwnd;
 
-    napi_add_env_cleanup_hook(
-        env,
-        [](void* args)
-        {
-            // This will also fire all the required destructors.
-            env_datas.erase((napi_env) args);
-        },
-        env);
-
-    return data;
+    return {napi_ok, data};
 }

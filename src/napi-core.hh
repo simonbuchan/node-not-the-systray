@@ -24,6 +24,13 @@ using namespace std::string_view_literals;
         } \
     } while (false)
 
+#define NAPI_RETURN_INIT_IF_NOT_OK(napi_expr, ...) \
+    do { \
+        if (napi_status _napi_expr_status = (napi_expr); _napi_expr_status != napi_ok) { \
+            return { _napi_expr_status, __VA_ARGS__ }; \
+        } \
+    } while (false)
+
 #define NAPI_THROW_RETURN_STATUS_IF_NOT_OK(env, napi_expr) \
     do { \
         if (napi_status _napi_expr_status = (napi_expr); _napi_expr_status != napi_ok) { \
@@ -47,6 +54,11 @@ using namespace std::string_view_literals;
         } \
     } while (false)
 
+#define NAPI_FATAL_IF(napi_expr) \
+    do { \
+        if (napi_expr) NAPI_FATAL(#napi_expr); \
+    } while (false)
+
 #define NAPI_FATAL_IF_NOT_OK(napi_expr) \
     do { \
         if (napi_status _napi_expr_status = (napi_expr); _napi_expr_status != napi_ok) \
@@ -58,6 +70,13 @@ using namespace std::string_view_literals;
 
 inline napi_status napi_throw_last_error(napi_env env)
 {
+    bool is_pending = false;
+    NAPI_FATAL_IF_NOT_OK(napi_is_exception_pending(env, &is_pending));
+    if (is_pending)
+    {
+        return napi_pending_exception;
+    }
+
     const napi_extended_error_info* info = nullptr;
     NAPI_FATAL_IF_NOT_OK(napi_get_last_error_info(env, &info));
 

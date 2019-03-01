@@ -2,7 +2,17 @@ const guid = "ded73175-c489-4f7e-acdc-3dbdde784468";
 const id = 1;
 
 catchErrors(() => {
-    const tray = require('./build/Debug/tray.node');
+    const tray = require('.');
+
+    const altMenu = tray.createMenu([
+        { id: 123, text: "Item 123", checked: false },
+        {
+            text: "Submenu", items: [
+                { id: 456, text: "Subitem 456" },
+                { id: 789, text: "Subitem 789" },
+            ]
+        },
+    ]);
 
     tray.add(id, guid, {
         // icon: tray.icons.warning,
@@ -10,10 +20,22 @@ catchErrors(() => {
         // notificationIcon: tray.icons.app,
         notificationIcon: "test-1.ico",
         tooltip: "Example Tooltip Text",
+
+        contextMenu: tray.createMenu([
+            { id: 123, text: "Item 123", checked: true },
+            {
+                text: "Submenu", items: [
+                    { id: 456, text: "Subitem 456" },
+                    { id: 789, text: "Subitem 789" },
+                ]
+            },
+        ]),
+
         onSelect: catchErrors((itemId) => {
             console.log("selected %O", itemId);
 
             tray.update(id, {
+                contextMenu: itemId === 123 ? altMenu : undefined,
                 notification: {
                     sound: false,
                     title: "Annoying Message",
@@ -23,22 +45,10 @@ catchErrors(() => {
         }),
     });
 
-    let hidden = false;
-    setInterval(catchErrors(() => {
-        hidden = !hidden;
-        tray.update(id, {
-            hidden,
-            // sound: false,
-            // balloonTitle: "Annoying Message",
-            // balloonText: `The time is: ${new Date().toLocaleTimeString()}`
-        });
-    }), 5000);
-
     if (process.stdin.setRawMode)
         process.stdin.setRawMode(true);
-    process.stdout.write('Press any key to exit... ');
+    process.stdout.write('Press any key to exit...\n');
     process.stdin.on('data', catchErrors(() => {
-        process.stdout.write('\n');
         tray.remove(id);
 
         process.exit();

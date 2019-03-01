@@ -1,11 +1,10 @@
 #pragma once
 
-#include <bitset>
 #include <functional>
 #include <unordered_map>
 
 #include <uv.h>
-// #include <Windows.h>
+#include <Windows.h>
 
 #include "napi.hh"
 
@@ -52,54 +51,54 @@ struct Unique
 
 using WndHandle = Unique<HWND, DestroyWindow>;
 using IconHandle = Unique<HICON, DestroyIcon>;
+using MenuHandle = Unique<HMENU, DestroyMenu>;
+
+struct MenuObject;
 
 struct IconData
 {
     napi_env env;
     uint16_t id;
     GUID guid;
-    HMENU menu = nullptr;
     HICON icon = nullptr;
     HICON balloon_icon = nullptr;
     bool large_balloon_icon = false;
     // We don't want to DestroyIcon() shared icons.
     IconHandle custom_icon;
     IconHandle custom_balloon_icon;
+    NapiUnwrappedRef<MenuObject> context_menu_ref;
     NapiAsyncCallback select_callback;
 };
 
 struct EnvData
 {
-    napi_env env;
+    napi_env env = nullptr;
+    napi_ref menu_constructor = nullptr;
     WndHandle msg_hwnd;
     std::unordered_map<int32_t, IconData> icons;
     uv_idle_t message_pump_idle = { this };
 
-    static void message_pump_idle_cb(uv_idle_t* idle)
-    {
-        auto data = (EnvData*) idle->data;
+    IconData* get_icon_data(int32_t icon_id);
 
-        MSG msg;
-        while (PeekMessage(&msg, data->msg_hwnd, 0, 0, PM_REMOVE))
-        {
-            TranslateMessage(&msg);
-            DispatchMessage(&msg);
-        }
-    }
-
-    void start_message_pump()
-    {
-        uv_idle_start(&message_pump_idle, &message_pump_idle_cb);
-    }
-
-    void stop_message_pump()
-    {
-        uv_idle_start(&message_pump_idle, &message_pump_idle_cb);
-    }
+    void start_message_pump();
+    void stop_message_pump();
 };
 
 EnvData* get_env_data(napi_env env);
 
-IconData* get_icon_data(napi_env env, int32_t icon_id);
+std::tuple<napi_status, EnvData*> create_env_data(napi_env env);
 
-EnvData* get_or_create_env_data(napi_env env);
+struct MenuObject : NapiWrapped<MenuObject>
+{
+    MenuHandle menu;
+
+    static NewResult new_instance(EnvData* env_data, MenuHandle menu)
+    {
+        auto result = NapiWrapped::new_instance(env_data->env, env_data->menu_constructor);
+        if (result.wrapped)
+        {
+            result.wrapped->menu = std::move(menu);
+        }
+        return result;
+    }
+};
