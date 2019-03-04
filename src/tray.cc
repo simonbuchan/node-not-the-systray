@@ -4,6 +4,8 @@
 #include "data.hh"
 #include "napi.hh"
 #include "parse_guid.hh"
+#include "icon-object.hh"
+#include "menu-object.hh"
 
 using namespace std::string_literals;
 
@@ -66,68 +68,6 @@ napi_status napi_get_value(napi_env env, napi_value value, GUID* result)
     }
 }
 
-struct IconId
-{
-    HINSTANCE hinstance = nullptr;
-    DWORD flags = 0;
-    std::wstring string_value;
-    int32_t int_value = 0;
-
-    bool is_shared() const { return flags & LR_SHARED; }
-
-    LPCWSTR resource_name() const
-    {
-        return string_value.empty() ? MAKEINTRESOURCE(int_value) : string_value.c_str();
-    }
-
-    HICON load_small() const
-    {
-        return load(GetSystemMetrics(SM_CXSMICON), GetSystemMetrics(SM_CYSMICON));
-    }
-
-    HICON load() const
-    {
-        return load(GetSystemMetrics(SM_CXICON), GetSystemMetrics(SM_CYICON));
-    }
-
-    HICON load(int cx, int cy) const
-    {
-        auto name = resource_name();
-        return !name ? nullptr : (HICON) LoadImage(nullptr, name, IMAGE_ICON, cx, cy, flags);
-    }
-};
-
-napi_status napi_get_value(napi_env env, napi_value value, IconId* result)
-{
-    napi_valuetype type;
-    NAPI_RETURN_IF_NOT_OK(napi_typeof(env, value, &type));
-    if (type == napi_undefined || type == napi_null)
-    {
-        // load nothing, draws nothing.
-    }
-    else if (type == napi_number)
-    {
-        result->flags |= LR_SHARED;
-        NAPI_RETURN_IF_NOT_OK(napi_get_value(env, value, &result->int_value));
-        if (!(1 <= result->int_value && result->int_value <= 0xFFFF))
-        {
-            NAPI_RETURN_IF_NOT_OK(napi_throw_error(env, nullptr, "icon ids must be a positive 16-bit integer."));
-            return napi_pending_exception;
-        }
-    }
-    else if (type == napi_string)
-    {
-        result->flags |= LR_LOADFROMFILE;
-        NAPI_RETURN_IF_NOT_OK(napi_get_value(env, value, &result->string_value));
-    }
-    else
-    {
-        NAPI_RETURN_IF_NOT_OK(napi_throw_error(env, nullptr, "icons must be a system icon id or icon file path."));
-        return napi_pending_exception;
-    }
-    return napi_ok;
-}
-
 napi_status napi_get_value(
     napi_env env,
     napi_value value,
@@ -160,6 +100,7 @@ struct notification_options
     std::optional<bool> sound;
     std::optional<bool> respect_quiet_time;
 
+    std::optional<IconObject::Ref> icon_ref;
     std::optional<std::wstring> title;
     std::optional<std::wstring> text;
 };
@@ -171,8 +112,7 @@ struct notify_icon_options
     std::optional<bool> hidden;
     std::optional<bool> large_balloon_icon;
 
-    std::optional<IconId> icon_id;
-    std::optional<IconId> balloon_icon_id;
+    std::optional<IconObject::Ref> icon_ref;
     std::optional<std::wstring> tooltip;
     std::optional<notification_options> notification;
 
@@ -201,6 +141,7 @@ napi_status napi_get_value(napi_env env, napi_value value, notification_options*
     NAPI_RETURN_IF_NOT_OK(napi_get_named_property(env, value, "sound", &options->sound));
     NAPI_RETURN_IF_NOT_OK(napi_get_named_property(env, value, "respectQuietTime", &options->respect_quiet_time));
     NAPI_RETURN_IF_NOT_OK(napi_get_named_property(env, value, "realtime", &options->realtime));
+    NAPI_RETURN_IF_NOT_OK(napi_get_named_property(env, value, "icon", &options->icon_ref));
     NAPI_RETURN_IF_NOT_OK(napi_get_named_property(env, value, "title", &options->title));
     NAPI_RETURN_IF_NOT_OK(napi_get_named_property(env, value, "text", &options->text));
     return napi_ok;
@@ -208,10 +149,8 @@ napi_status napi_get_value(napi_env env, napi_value value, notification_options*
 
 napi_status get_icon_options_common(napi_env env, napi_value value, notify_icon_options* options)
 {
-    NAPI_RETURN_IF_NOT_OK(napi_get_named_property(env, value, "icon", &options->icon_id));
+    NAPI_RETURN_IF_NOT_OK(napi_get_named_property(env, value, "icon", &options->icon_ref));
     NAPI_RETURN_IF_NOT_OK(napi_get_named_property(env, value, "tooltip", &options->tooltip));
-    NAPI_RETURN_IF_NOT_OK(napi_get_named_property(env, value, "largeNotificationIcon", &options->large_balloon_icon));
-    NAPI_RETURN_IF_NOT_OK(napi_get_named_property(env, value, "notificationIcon", &options->balloon_icon_id));
     NAPI_RETURN_IF_NOT_OK(napi_get_named_property(env, value, "hidden", &options->hidden));
     NAPI_RETURN_IF_NOT_OK(napi_get_named_property(env, value, "notification", &options->notification));
     NAPI_RETURN_IF_NOT_OK(napi_get_named_property(env, value, "contextMenu", &options->context_menu_ref));
@@ -249,6 +188,7 @@ napi_status napi_get_value(napi_env env, napi_value value, notify_icon_add_optio
 
 bool apply_notification(notification_options* options, NOTIFYICONDATAW* nid, IconData* icon_data)
 {
+    nid->uFlags |= NIF_INFO;
     if (options->realtime.value_or(false))
         nid->uFlags |= NIF_REALTIME;
     if (!options->sound.value_or(true))
@@ -256,11 +196,23 @@ bool apply_notification(notification_options* options, NOTIFYICONDATAW* nid, Ico
     if (options->respect_quiet_time.value_or(true))
         nid->dwInfoFlags |= NIIF_RESPECT_QUIET_TIME;
 
-    nid->uFlags |= NIF_INFO;
-    nid->dwInfoFlags |= NIIF_USER;
-    nid->hBalloonIcon = icon_data->balloon_icon;
-    if (icon_data->large_balloon_icon)
-        nid->dwInfoFlags |= NIIF_LARGE_ICON;
+    if (options->icon_ref)
+    {
+        icon_data->notification_icon_ref = std::move(options->icon_ref.value());
+        nid->dwInfoFlags |= NIIF_USER;
+        auto icon_object = icon_data->notification_icon_ref.wrapped;
+        nid->hBalloonIcon = icon_object->icon;
+        if (icon_object->width == GetSystemMetrics(SM_CXICON) &&
+            icon_object->height == GetSystemMetrics(SM_CYICON))
+        {
+            nid->dwInfoFlags |= NIIF_LARGE_ICON;
+        }
+    }
+    else
+    {
+        icon_data->notification_icon_ref = {};
+    }
+
     copy(options->title.value_or(L""s), nid->szInfoTitle);
     copy(options->text.value_or(L""s), nid->szInfo);
 
@@ -277,41 +229,18 @@ bool apply_options(notify_icon_options* options, NOTIFYICONDATAW* nid, IconData*
             nid->dwState |= NIS_HIDDEN;
     }
 
-    if (options->icon_id)
+    if (options->icon_ref)
     {
         nid->uFlags |= NIF_ICON;
-        auto icon = options->icon_id->load_small();
-        if (options->icon_id->resource_name() && !icon)
-        {
-            napi_throw_win32_error(icon_data->env, "LoadImageW");
-            return false;
-        }
-        icon_data->icon = icon;
-        icon_data->custom_icon = options->icon_id->is_shared() ? nullptr : icon;
-    }
+        icon_data->icon_ref = std::move(options->icon_ref.value());
 
-    nid->hIcon = icon_data->icon;
+        nid->hIcon = icon_data->icon_ref.wrapped->icon;
+    }
 
     if (options->tooltip)
     {
         nid->uFlags |= NIF_TIP | NIF_SHOWTIP;
         copy(options->tooltip.value(), nid->szTip);
-    }
-
-    if (options->balloon_icon_id)
-    {
-        icon_data->large_balloon_icon = options->large_balloon_icon.value_or(true);
-        auto icon = icon_data->large_balloon_icon
-                        ? options->balloon_icon_id->load()
-                        : options->balloon_icon_id->load_small();
-
-        if (options->balloon_icon_id->resource_name() && !icon)
-        {
-            napi_throw_win32_error(icon_data->env, "LoadImageW");
-            return false;
-        }
-        icon_data->balloon_icon = icon;
-        icon_data->custom_balloon_icon = options->balloon_icon_id->is_shared() ? nullptr : icon;
     }
 
     if (options->context_menu_ref)
@@ -490,48 +419,29 @@ napi_value export_createMenuFromTemplate(napi_env env, napi_callback_info info)
     }
 }
 
-napi_status create_builtin_icons(napi_env env, napi_value* result)
-{
-    napi_value icon_app, icon_info, icon_warning, icon_error;
-    NAPI_RETURN_IF_NOT_OK(napi_create(env, (int32_t) (size_t) IDI_APPLICATION, &icon_app));
-    NAPI_RETURN_IF_NOT_OK(napi_create(env, (int32_t) (size_t) IDI_INFORMATION, &icon_info));
-    NAPI_RETURN_IF_NOT_OK(napi_create(env, (int32_t) (size_t) IDI_WARNING, &icon_warning));
-    NAPI_RETURN_IF_NOT_OK(napi_create(env, (int32_t) (size_t) IDI_ERROR, &icon_error));
-
-    NAPI_RETURN_IF_NOT_OK(napi_create_object(env, result));
-    NAPI_RETURN_IF_NOT_OK(napi_define_properties(env, *result,
-    {
-        napi_value_property("app", icon_app),
-        napi_value_property("info", icon_info),
-        napi_value_property("warning", icon_warning),
-        napi_value_property("error", icon_error),
-    }));
-
-    return napi_ok;
-}
-
 #define EXPORT_METHOD(name) napi_method_property(#name, export_ ## name)
 
 NAPI_MODULE_INIT()
 {
-    if (auto [status, env_data] = create_env_data(env); status != napi_ok)
+    EnvData* env_data;
+    if (auto [status, new_env_data] = create_env_data(env); status != napi_ok)
     {
         napi_throw_last_error(env);
         return nullptr;
     }
     else
     {
-        NAPI_THROW_RETURN_NULL_IF_NOT_OK(env, MenuObject::define_class(
-            env,
-            "Menu",
-            &env_data->menu_constructor));
+        env_data = new_env_data;
     }
 
-    napi_value icons;
-    NAPI_THROW_RETURN_NULL_IF_NOT_OK(env, create_builtin_icons(env, &icons));
+    napi_value menu_constructor, icon_constructor;
+    NAPI_THROW_RETURN_NULL_IF_NOT_OK(env, MenuObject::define_class(env_data, &menu_constructor));
+    NAPI_THROW_RETURN_NULL_IF_NOT_OK(env, IconObject::define_class(env_data, &icon_constructor));
+
     NAPI_THROW_RETURN_NULL_IF_NOT_OK(env, napi_define_properties(env, exports,
     {
-        napi_value_property("icons", icons),
+        napi_value_property("Menu", menu_constructor),
+        napi_value_property("Icon", icon_constructor),
         EXPORT_METHOD(add),
         EXPORT_METHOD(update),
         EXPORT_METHOD(remove),

@@ -11,6 +11,61 @@ Object.defineProperties(bindings, {
     createMenu: { value: createMenu, enumerable: true },
 });
 
+const { Icon } = bindings;
+
+Object.defineProperties(Icon, {
+    ids: {
+        enumerable: true,
+        value: Object.create(null, {
+            app: { value: 32512, enumerable: true },
+            error: { value: 32513, enumerable: true },
+            question: { value: 32514, enumerable: true },
+            warning: { value: 32515, enumerable: true },
+            info: { value: 32516, enumerable: true },
+            winLogo: { value: 32517, enumerable: true },
+            shield: { value: 32518, enumerable: true },
+        }),
+    },
+    load: {
+        enumerable: true,
+        value: function Icon_load(pathOrId, size) {
+            switch (size) {
+                case "small":
+                    size = { width: Icon.smallWidth, height: Icon.smallHeight };
+                    break;
+                case "large":
+                    size = { width: Icon.largeWidth, height: Icon.largeHeight };
+                    break;
+            }
+            if (!size || typeof size.width !== "number" || typeof size.height !== "number") {
+                throw new Error("'size' should be either 'small', 'large', or { width, height }.");
+            }
+            switch (typeof pathOrId) {
+                default:
+                    throw new Error("'pathOrId' should be either a file path or a property of Icon.ids.");
+                case "number":
+                    return Icon.loadBuiltin(pathOrId, size.width, size.height);
+                case "string":
+                    return Icon.loadFile(pathOrId, size.width, size.height);
+            }
+        },
+    },
+    loadFileSmall: {
+        enumerable: true,
+        value: function Icon_loadFileSmall(path) {
+            const { loadFile, smallWidth, smallHeight } = Icon;
+            return loadFile(path, smallWidth, smallHeight);
+        },
+    },
+    loadFileLarge: {
+        enumerable: true,
+        value: function Icon_loadFileLarge(path) {
+            const { loadFile, largeWidth, largeHeight } = Icon;
+            return loadFile(path, largeWidth, largeHeight);
+        },
+    },
+});
+
 function createMenu(items) {
     // Generates a MENUEX binary resource structure to be
     // loaded by LoadMenuIndirectW().
@@ -37,7 +92,7 @@ function createMenu(items) {
 
     function addList(items) {
         if (items.length < 1) {
-            addItem({ state: 3, text: "Empty" }, true);
+            addItem({ text: "Empty", disabled: true }, true);
             return;
         }
         const startItems = items.slice();

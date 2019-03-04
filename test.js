@@ -4,8 +4,17 @@ const id = 1;
 catchErrors(() => {
     const tray = require('.');
 
+    const icon = tray.Icon.load(tray.Icon.ids.warning, "small");
+    // const icon = tray.Icon.loadFileSmall("test-2.ico");
+    // const icon = tray.Icon.load("test-2.ico", "small");
+    // const notificationIcon = tray.Icon.loadBuiltin(tray.icons.app, tray.Icon.largeWidth, tray.Icon.largeHeight);
+    const notificationIcon = tray.Icon.loadFileLarge("test-1.ico");
+
     const altMenu = tray.createMenu([
         { id: 123, text: "Item 123", checked: false },
+        { id: 10, text: "Totally different item!" },
+        { separator: true },
+        { text: "Empty menu", items: [] },
         {
             text: "Submenu", items: [
                 { id: 456, text: "Subitem 456" },
@@ -15,10 +24,7 @@ catchErrors(() => {
     ]);
 
     tray.add(id, guid, {
-        // icon: tray.icons.warning,
-        icon: "test-2.ico",
-        // notificationIcon: tray.icons.app,
-        notificationIcon: "test-1.ico",
+        icon,
         tooltip: "Example Tooltip Text",
 
         contextMenu: tray.createMenu([
@@ -37,6 +43,7 @@ catchErrors(() => {
             tray.update(id, {
                 contextMenu: itemId === 123 ? altMenu : undefined,
                 notification: {
+                    icon: notificationIcon,
                     sound: false,
                     title: "Annoying Message",
                     text: `The time is: ${new Date().toLocaleTimeString()}`

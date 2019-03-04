@@ -25,19 +25,35 @@ struct NapiWrapped
     static napi_status define_class(
         napi_env env,
         std::string_view name,
-        napi_ref* constructor_ref)
+        napi_ref* constructor_ref,
+        std::initializer_list<napi_property_descriptor> static_props = {})
     {
         napi_value constructor_value;
+        return define_class(
+            env,
+            name,
+            &constructor_value,
+            constructor_ref,
+            static_props);
+    }
+
+    static napi_status define_class(
+        napi_env env,
+        std::string_view name,
+        napi_value* constructor_value,
+        napi_ref* constructor_ref,
+        std::initializer_list<napi_property_descriptor> static_props = {})
+    {
         NAPI_RETURN_IF_NOT_OK(napi_define_class(
             env,
             name.data(),
             name.size(),
             constructor,
             nullptr,
-            0,
-            nullptr,
-            &constructor_value));
-        return napi_create_reference(env, constructor_value, 1, constructor_ref);
+            static_props.size(),
+            static_props.begin(),
+            constructor_value));
+        return napi_create_reference(env, *constructor_value, 1, constructor_ref);
     }
 
     static napi_value constructor(napi_env env, napi_callback_info info)
@@ -130,6 +146,13 @@ struct NapiWrapped
             return napi_ok;
         }
     }
+
+protected:
+    NapiWrapped() = default;
+    NapiWrapped(NapiWrapped const&) = delete;
+    NapiWrapped(NapiWrapped&&) = delete;
+    NapiWrapped& operator=(NapiWrapped const&) = delete;
+    NapiWrapped& operator=(NapiWrapped&&) = delete;
 };
 
 template <typename T>

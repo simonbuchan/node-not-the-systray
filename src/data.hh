@@ -50,22 +50,19 @@ struct Unique
 };
 
 using WndHandle = Unique<HWND, DestroyWindow>;
-using IconHandle = Unique<HICON, DestroyIcon>;
 using MenuHandle = Unique<HMENU, DestroyMenu>;
 
 struct MenuObject;
+struct IconObject;
 
 struct IconData
 {
     napi_env env;
     uint16_t id;
     GUID guid;
-    HICON icon = nullptr;
-    HICON balloon_icon = nullptr;
     bool large_balloon_icon = false;
-    // We don't want to DestroyIcon() shared icons.
-    IconHandle custom_icon;
-    IconHandle custom_balloon_icon;
+    NapiUnwrappedRef<IconObject> icon_ref;
+    NapiUnwrappedRef<IconObject> notification_icon_ref;
     NapiUnwrappedRef<MenuObject> context_menu_ref;
     NapiAsyncCallback select_callback;
 };
@@ -74,6 +71,7 @@ struct EnvData
 {
     napi_env env = nullptr;
     napi_ref menu_constructor = nullptr;
+    napi_ref icon_constructor = nullptr;
     WndHandle msg_hwnd;
     std::unordered_map<int32_t, IconData> icons;
     uv_idle_t message_pump_idle = { this };
@@ -87,18 +85,3 @@ struct EnvData
 EnvData* get_env_data(napi_env env);
 
 std::tuple<napi_status, EnvData*> create_env_data(napi_env env);
-
-struct MenuObject : NapiWrapped<MenuObject>
-{
-    MenuHandle menu;
-
-    static NewResult new_instance(EnvData* env_data, MenuHandle menu)
-    {
-        auto result = NapiWrapped::new_instance(env_data->env, env_data->menu_constructor);
-        if (result.wrapped)
-        {
-            result.wrapped->menu = std::move(menu);
-        }
-        return result;
-    }
-};

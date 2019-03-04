@@ -10,6 +10,20 @@ inline napi_status napi_define_properties(
     return napi_define_properties(env, object, properties.size(), properties.begin());
 }
 
+inline napi_property_descriptor napi_getter_property(
+    const char *utf8name,
+    napi_callback getter,
+    napi_property_attributes attributes = napi_enumerable,
+    void *data = nullptr)
+{
+    napi_property_descriptor desc = {};
+    desc.utf8name = utf8name;
+    desc.getter = getter;
+    desc.attributes = attributes;
+    desc.data = data;
+    return desc;
+}
+
 inline napi_property_descriptor napi_value_property(
     const char *utf8name,
     napi_value value,

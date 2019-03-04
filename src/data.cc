@@ -1,4 +1,5 @@
 #include "data.hh"
+#include "menu-object.hh"
 
 #include <map>
 #include <mutex>
