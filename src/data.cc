@@ -57,11 +57,20 @@ static void message_pump_idle_cb(uv_idle_t* idle)
 {
     auto data = (EnvData*) idle->data;
 
-    MSG msg;
-    while (PeekMessage(&msg, data->msg_hwnd, 0, 0, PM_REMOVE))
+    // Poll for messages without blocking either the node event loop for too long (10ms)
+    // or burning an entire CPU. Would be nicer to use a GetMessage() loop on another
+    // thread, but it seems a bit over complicated since this mostly works fine
+    // (0% CPU on my machine).
+    // Be aware this does still prevent the CPU from getting to sleep mode, so it's not perfect.
+    // https://stackoverflow.com/a/10866466/20135
+    if (MsgWaitForMultipleObjects(0, nullptr, false, 10, QS_ALLINPUT) == WAIT_OBJECT_0)
     {
-        TranslateMessage(&msg);
-        DispatchMessage(&msg);
+        MSG msg = {};
+        while (PeekMessage(&msg, data->msg_hwnd, 0, 0, PM_REMOVE))
+        {
+            TranslateMessage(&msg);
+            DispatchMessage(&msg);
+        }
     }
 }
 
