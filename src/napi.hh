@@ -13,30 +13,55 @@
 #include "napi-win32.hh"
 #include "napi-wrap.hh"
 
-template <typename... T>
-inline napi_status napi_get_required_args(napi_env env, napi_callback_info info, T*... results)
+template <typename This, typename... Args>
+inline napi_status napi_get_cb_info(
+    napi_env env,
+    napi_callback_info info,
+    This* this_arg,
+    void** data,
+    int required,
+    Args*... args)
 {
-    return napi_get_args(env, info, sizeof...(results), results...);
-}
-
-template <typename... T>
-inline napi_status napi_get_args(napi_env env, napi_callback_info info, int required, T*... results)
-{
-    napi_value argv[sizeof...(results)];
-    size_t argc = sizeof...(results);
-    NAPI_RETURN_IF_NOT_OK(napi_get_cb_info(env, info, &argc, argv, nullptr, nullptr));
+    napi_value this_value = nullptr;
+    napi_value arg_values[sizeof...(args)];
+    size_t argc = sizeof...(args);
+    NAPI_RETURN_IF_NOT_OK(napi_get_cb_info(
+        env,
+        info,
+        &argc,
+        arg_values,
+        this_arg ? &this_value : nullptr,
+        data));
 
     if (argc < required)
     {
         napi_throw_error(env, nullptr, (
-            "invalid args: provided "s + std::to_string(argc) +
+            "Invalid args: provided "s + std::to_string(argc) +
             " but requires "s + std::to_string(required) +
             " arguments."s
         ).c_str());
         return napi_invalid_arg;
     }
 
-    if (auto [status, status_argp] = napi_get_many_values(env, argv, results...); status != napi_ok)
+    if (this_arg)
+    {
+        if (auto status = napi_get_value(env, this_value, this_arg); status != napi_ok)
+        {
+            if (status == napi_pending_exception)
+                return status;
+
+            const napi_extended_error_info* errorinfo;
+            NAPI_RETURN_IF_NOT_OK(napi_get_last_error_info(env, &errorinfo));
+
+            auto message = "Invalid 'this'"s;
+            if (errorinfo->error_message) message.append(": "sv).append(errorinfo->error_message);
+            napi_throw_error(env, nullptr, message.c_str());
+            return status;
+        }
+    }
+
+    if (auto [status, status_value] = napi_get_many_values(env, arg_values, args...);
+        status != napi_ok)
     {
         if (status == napi_pending_exception)
             return status;
@@ -44,13 +69,62 @@ inline napi_status napi_get_args(napi_env env, napi_callback_info info, int requ
         const napi_extended_error_info* errorinfo;
         NAPI_RETURN_IF_NOT_OK(napi_get_last_error_info(env, &errorinfo));
 
-        auto message = "Invalid argument "s + std::to_string(status_argp - argv);
-        if (errorinfo->error_message) message += ": "s + errorinfo->error_message;
+        auto message = "Invalid argument "s + std::to_string(status_value - arg_values + 1);
+        if (errorinfo->error_message) message.append(": "sv).append(errorinfo->error_message);
         napi_throw_error(env, nullptr, message.c_str());
         return status;
     }
 
     return napi_ok;
+}
+
+template <typename... Args>
+inline napi_status napi_get_cb_info(
+    napi_env env,
+    napi_callback_info info,
+    nullptr_t this_arg,
+    void** data,
+    int required,
+    Args*... args)
+{
+    return napi_get_cb_info<void, Args...>(
+        env,
+        info,
+        this_arg,
+        data,
+        required,
+        args...);
+}
+
+template <typename... Args>
+inline napi_status napi_get_required_args(
+    napi_env env,
+    napi_callback_info info,
+    Args*... args)
+{
+    return napi_get_cb_info(
+        env,
+        info,
+        nullptr,
+        nullptr,
+        sizeof...(args),
+        args...);
+}
+
+template <typename... Args>
+inline napi_status napi_get_args(
+    napi_env env,
+    napi_callback_info info,
+    int required_args,
+    Args*... args)
+{
+    return napi_get_cb_info(
+        env,
+        info,
+        nullptr,
+        nullptr,
+        required_args,
+        args...);
 }
 
 #if EXCEPTIONS

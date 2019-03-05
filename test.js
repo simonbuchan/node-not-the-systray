@@ -1,3 +1,4 @@
+const util = require("util");
 const guid = "ded73175-c489-4f7e-acdc-3dbdde784468";
 const id = 1;
 
@@ -10,11 +11,13 @@ catchErrors(() => {
     // const notificationIcon = tray.Icon.loadBuiltin(tray.icons.app, tray.Icon.largeWidth, tray.Icon.largeHeight);
     const notificationIcon = tray.Icon.loadFileLarge("test-1.ico");
 
-    const altMenu = tray.createMenu([
-        { id: 123, text: "Item 123", checked: false },
-        { id: 10, text: "Totally different item!" },
-        { separator: true },
-        { text: "Empty menu", items: [] },
+    let checked = false;
+
+    let count = 0;
+
+    const contextMenu = tray.Menu.create([
+        { id: 123, text: "Checkable", checked },
+        { id: 124, text: "Counter" },
         {
             text: "Submenu", items: [
                 { id: 456, text: "Subitem 456" },
@@ -27,21 +30,25 @@ catchErrors(() => {
         icon,
         tooltip: "Example Tooltip Text",
 
-        contextMenu: tray.createMenu([
-            { id: 123, text: "Item 123", checked: true },
-            {
-                text: "Submenu", items: [
-                    { id: 456, text: "Subitem 456" },
-                    { id: 789, text: "Subitem 789" },
-                ]
-            },
-        ]),
+        contextMenu,
 
         onSelect: catchErrors((itemId) => {
             console.log("selected %O", itemId);
+            switch (itemId) {
+                case 123:
+                    checked = !checked;
+                    contextMenu.update(0, {
+                        checked,
+                    });
+                    return;
+                case 124:
+                    contextMenu.update(1, {
+                        text: `Counter: ${++count}`,
+                    })
+                    return;
+            }
 
             tray.update(id, {
-                contextMenu: itemId === 123 ? altMenu : undefined,
                 notification: {
                     icon: notificationIcon,
                     sound: false,

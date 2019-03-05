@@ -5,6 +5,7 @@
             "sources": [
                 "src/data.cc",
                 "src/icon-object.cc",
+                "src/menu-object.cc",
                 "src/napi-win32.cc",
                 "src/parse_guid.cc",
                 "src/tray.cc"

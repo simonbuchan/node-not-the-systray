@@ -167,3 +167,41 @@ napi_status napi_get_value(napi_env env, napi_value value, NapiUnwrappedRef<T>* 
 
     return napi_ok;
 }
+
+// Handle napi_value = napi_value__*, which we don't want to match
+// but causes non-SFINAE compilation errors when used in std::is_base_of<>
+// https://stackoverflow.com/a/8449204/20135
+namespace detail
+{
+    template <typename T>
+    int is_complete_helper(int(*)[sizeof(T)]);
+
+    template <typename>
+    char is_complete_helper(...);
+
+    template <typename T>
+    constexpr bool is_complete_v = sizeof(is_complete_helper<T>(0)) != 1;
+
+    template <typename Base, typename Derived, typename = std::enable_if_t<is_complete_v<Derived>>>
+    constexpr bool is_complete_base_of_v = std::is_base_of_v<Base, Derived>;
+}
+
+template <typename T, typename = std::enable_if_t<detail::is_complete_base_of_v<NapiWrapped<T>, T>>>
+napi_status napi_get_value(napi_env env, napi_value value, T** result)
+{
+    auto unwrap = NapiWrapped<T>::try_unwrap(env, value);
+    if (unwrap.status != napi_ok)
+    {
+        return napi_throw_last_error(env);
+    }
+
+    if (!unwrap.wrapped)
+    {
+        napi_throw_type_error(env, nullptr, "Invalid native object type");
+        return napi_pending_exception;
+    }
+
+    *result = unwrap.wrapped;
+
+    return napi_ok;
+}

@@ -389,36 +389,6 @@ napi_value export_remove(napi_env env, napi_callback_info info)
     return nullptr;
 }
 
-napi_value export_createMenuFromTemplate(napi_env env, napi_callback_info info)
-{
-    napi_value value;
-    NAPI_RETURN_NULL_IF_NOT_OK(napi_get_required_args(env, info, &value));
-
-    void* data = nullptr;
-    size_t length = 0;
-    NAPI_THROW_RETURN_NULL_IF_NOT_OK(env, napi_get_buffer_info(env, value, &data, &length));
-
-    MenuHandle menu = LoadMenuIndirectW(data);
-    if (!menu)
-    {
-        napi_throw_win32_error(env, "LoadMenuIndirectW");
-        return nullptr;
-    }
-
-    auto env_data = get_env_data(env);
-
-    if (auto [status, wrapper, wrapped] = MenuObject::new_instance(env_data, std::move(menu));
-        status != napi_ok)
-    {
-        napi_throw_last_error(env);
-        return nullptr;
-    }
-    else
-    {
-        return wrapper;
-    }
-}
-
 #define EXPORT_METHOD(name) napi_method_property(#name, export_ ## name)
 
 NAPI_MODULE_INIT()
@@ -445,7 +415,6 @@ NAPI_MODULE_INIT()
         EXPORT_METHOD(add),
         EXPORT_METHOD(update),
         EXPORT_METHOD(remove),
-        EXPORT_METHOD(createMenuFromTemplate),
     }));
     return exports;
 }

@@ -5,6 +5,12 @@
 static_assert(sizeof(wchar_t) == sizeof(char16_t));
 
 // Looks weird, but it simplifies generic usages, like napi_get_many_values()
+
+inline napi_status napi_get_value(napi_env env, napi_value value, void* result)
+{
+    return napi_ok;
+}
+
 inline napi_status napi_get_value(napi_env env, napi_value value, napi_value* result)
 {
     *result = value;

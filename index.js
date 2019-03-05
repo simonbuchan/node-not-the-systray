@@ -7,11 +7,12 @@ try {
 
 module.exports = bindings;
 
-Object.defineProperties(bindings, {
-    createMenu: { value: createMenu, enumerable: true },
-});
+const { Icon, Menu } = bindings;
 
-const { Icon } = bindings;
+Object.defineProperties(Menu, {
+    createTemplate: { value: createMenuTemplate, enumerable: true },
+    // create: { value: createMenu, enumerable: true },
+});
 
 Object.defineProperties(Icon, {
     ids: {
@@ -67,6 +68,10 @@ Object.defineProperties(Icon, {
 });
 
 function createMenu(items) {
+    return bindings.Menu.createFromTemplate(createMenuTemplate(items));
+}
+
+function createMenuTemplate(items) {
     // Generates a MENUEX binary resource structure to be
     // loaded by LoadMenuIndirectW().
     // Docs are pretty garbarge here, I found the wine resource
@@ -86,9 +91,9 @@ function createMenu(items) {
     // Wrap everything in a menu item so the contents are a
     // valid popup menu, otherwise it doesn't display right.
     // No idea why it matters.
-    addItem({ items }, true);
+    addItem({ text: "root", items }, true);
 
-    return bindings.createMenuFromTemplate(Buffer.concat(buffers));
+    return Buffer.concat(buffers);
 
     function addList(items) {
         if (items.length < 1) {

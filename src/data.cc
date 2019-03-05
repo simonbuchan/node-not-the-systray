@@ -112,8 +112,7 @@ LRESULT messageWndProc(HWND hwnd, UINT msg, WPARAM wparam, LPARAM lparam)
                     {
                         // Required to hide menu after select or click-outside.
                         SetForegroundWindow(hwnd);
-                        HMENU menu = GetSubMenu(icon_data->context_menu_ref.wrapped->menu, 0);
-                        // HMENU menu = icon_data->context_menu;
+                        HMENU menu = icon_data->context_menu_ref.wrapped->menu;
 
                         auto item_id = (int32_t)TrackPopupMenuEx(
                             menu,
