@@ -3,78 +3,41 @@
 #include "napi-ref.hh"
 #include "napi-value.hh"
 
-struct NapiHandleScope
-{
-    napi_env env;
-    napi_handle_scope scope;
-    napi_status status;
-
-    explicit NapiHandleScope(napi_env env)
-        : env{ env }
-        , status{ napi_open_handle_scope(env, &scope) }
-    {
-    }
-
-    ~NapiHandleScope()
-    {
-        if (status == napi_ok) napi_close_handle_scope(env, scope);
-    }
-
-    operator napi_handle_scope() const { return scope; }
-
-    NapiHandleScope(NapiHandleScope const&) = delete;
-    NapiHandleScope& operator=(NapiHandleScope const&) = delete;
-    NapiHandleScope(NapiHandleScope&&) = delete;
-    NapiHandleScope& operator=(NapiHandleScope&&) = delete;
-};
-
-struct NapiCallbackScope
-{
-    napi_env env;
-    napi_callback_scope scope;
-    napi_status status;
-
-    NapiCallbackScope(
-        napi_env env,
-        napi_value resource_object,
-        napi_async_context context)
-        : env{ env }
-        , scope{}
-        , status{ napi_open_callback_scope(env, resource_object, context, &scope) }
-    {
-    }
-
-    ~NapiCallbackScope()
-    {
-        if (status == napi_ok) napi_close_callback_scope(env, scope);
-    }
-
-    operator napi_callback_scope() const { return scope; }
-
-    NapiCallbackScope(NapiCallbackScope const&) = delete;
-    NapiCallbackScope& operator=(NapiCallbackScope const&) = delete;
-    NapiCallbackScope(NapiCallbackScope&&) = delete;
-    NapiCallbackScope& operator=(NapiCallbackScope&&) = delete;
-};
-
 struct NapiAsyncContext
 {
     napi_env env = nullptr;
     napi_async_context context = nullptr;
+    // Context resource object is recommended to match the init value
+    napi_ref resource_object_ref = nullptr;
 
     NapiAsyncContext() = default;
 
     napi_status init(
         napi_env new_env,
-        napi_value resource_name = nullptr,
+        napi_value resource_name,
         napi_value resource_object = nullptr)
     {
-        if (context) napi_async_destroy(env, context);
+        if (context)
+        {
+            NAPI_RETURN_IF_NOT_OK(napi_async_destroy(env, context));
+        }
+        if (resource_object_ref)
+        {
+            NAPI_RETURN_IF_NOT_OK(napi_reference_unref(env, resource_object_ref, nullptr));
+        }
+        if (!resource_object)
+        {
+            NAPI_RETURN_IF_NOT_OK(napi_create_object(new_env, &resource_object));
+        }
         env = new_env;
+        NAPI_RETURN_IF_NOT_OK(napi_create_reference(env, resource_object, 1, &resource_object_ref));
         return napi_async_init(env, resource_object, resource_name, &context);
     }
 
-    napi_status init(napi_env new_env, std::string_view resource_name, napi_value resource_object = nullptr)
+    napi_status init(
+        napi_env new_env,
+        std::string_view resource_name,
+        napi_value resource_object = nullptr)
     {
         napi_value resource_name_value;
         NAPI_RETURN_IF_NOT_OK(napi_create(new_env, resource_name, &resource_name_value));
@@ -84,6 +47,7 @@ struct NapiAsyncContext
     ~NapiAsyncContext()
     {
         if (context) napi_async_destroy(env, context);
+        if (resource_object_ref) napi_reference_unref(env, resource_object_ref, nullptr);
     }
 
     operator napi_async_context() const { return context; }
@@ -93,14 +57,57 @@ struct NapiAsyncContext
     NapiAsyncContext(NapiAsyncContext&& other)
         : env{ other.env }
         , context{ std::exchange(other.context, nullptr) }
+        , resource_object_ref{ std::exchange(other.resource_object_ref, nullptr) }
     {
     }
     NapiAsyncContext& operator=(NapiAsyncContext&& other)
     {
         std::swap(env, other.env);
         std::swap(context, other.context);
+        std::swap(resource_object_ref, other.resource_object_ref);
         return *this;
     }
+};
+
+struct NapiCallbackScope
+{
+    napi_env env = nullptr;
+    napi_callback_scope scope = nullptr;
+
+    NapiCallbackScope() = default;
+
+    napi_status open(NapiAsyncContext const& context)
+    {
+        napi_value resource_object;
+        NAPI_RETURN_IF_NOT_OK(napi_get_reference_value(
+            context.env,
+            context.resource_object_ref,
+            &resource_object));
+        return open(context.env, resource_object, context.context);
+    }
+
+    napi_status open(
+        napi_env new_env,
+        napi_value resource_object,
+        napi_async_context context)
+    {
+        if (scope)
+            NAPI_RETURN_IF_NOT_OK(napi_close_callback_scope(env, std::exchange(scope, nullptr)));
+        env = new_env;
+        return napi_open_callback_scope(env, resource_object, context, &scope);
+    }
+
+    ~NapiCallbackScope()
+    {
+        if (scope) napi_close_callback_scope(env, scope);
+    }
+
+    operator napi_callback_scope() const { return scope; }
+
+    NapiCallbackScope(NapiCallbackScope const&) = delete;
+    NapiCallbackScope& operator=(NapiCallbackScope const&) = delete;
+    NapiCallbackScope(NapiCallbackScope&&) = delete;
+    NapiCallbackScope& operator=(NapiCallbackScope&&) = delete;
 };
 
 struct NapiAsyncCallback : NapiRef
@@ -115,25 +122,21 @@ struct NapiAsyncCallback : NapiRef
     }
 
     template <typename... Args>
-    void operator()(Args... args) const
+    napi_status operator()(napi_value* result, Args&&... args) const
     {
-        NapiHandleScope handle_scope{env};
-        NAPI_THROW_RETURN_VOID_IF_NOT_OK(env, handle_scope.status);
+        NapiEscapableHandleScope handle_scope;
+        NAPI_RETURN_IF_NOT_OK(handle_scope.open(env));
 
-        // context object is required and must be an object, but it doesn't need anything
-        // specific. Similarly recv is checked for nullptr, but can be napi undefined.
-        // I opened https://github.com/nodejs/node/issues/26342 about this, maybe I'm just dumb?
-        napi_value object;
-        NAPI_THROW_RETURN_VOID_IF_NOT_OK(env, napi_create_object(env, &object));
-
+        // recv is checked for nullptr, but can be napi undefined.
+        // See https://github.com/nodejs/node/issues/26342
         napi_value recv;
-        NAPI_THROW_RETURN_VOID_IF_NOT_OK(env, napi_get_undefined(env, &recv));
+        NAPI_RETURN_IF_NOT_OK(napi_get_undefined(env, &recv));
 
-        NapiCallbackScope callback_scope{env, object, context};
-        NAPI_THROW_RETURN_VOID_IF_NOT_OK(env, callback_scope.status);
+        NapiCallbackScope callback_scope;
+        NAPI_RETURN_IF_NOT_OK(callback_scope.open(context));
 
         napi_value func = nullptr;
-        NAPI_THROW_RETURN_VOID_IF_NOT_OK(env, get(&func));
+        NAPI_RETURN_IF_NOT_OK(NapiRef::get(&func));
 
         napi_value arg_values[sizeof...(args)];
         napi_value result_value = nullptr;
@@ -144,7 +147,7 @@ struct NapiAsyncCallback : NapiRef
             status != napi_ok)
         {
             napi_throw_last_error(env);
-            return;
+            return napi_pending_exception;
         }
 
         if (auto status = napi_call_function(
@@ -157,6 +160,14 @@ struct NapiAsyncCallback : NapiRef
             status != napi_ok)
         {
             napi_throw_last_error(env);
+            return napi_pending_exception;
         }
+
+        if (result)
+        {
+            NAPI_RETURN_IF_NOT_OK(handle_scope.escape(result_value, result));
+        }
+
+        return napi_ok;
     }
 };

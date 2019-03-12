@@ -11,16 +11,16 @@ struct MENUEX_TEMPLATE_HEADER
 
 struct MENUEX_TEMPLATE_ITEM
 {
-  uint32_t type;
-  uint32_t state;
-  uint32_t id;
-  uint16_t flags;
-  wchar_t text[1]; // actual length is dynamic
+    uint32_t type;
+    uint32_t state;
+    uint32_t id;
+    uint16_t flags;
+    wchar_t text[1]; // actual length is dynamic
 
-//   if (items) {
-//       ?? uint32 helpid;
-//       ?? MENUEX_TEMPLATE_ITEM[...] items;
-//   }
+    //   if (items) {
+    //       ?? uint32 helpid;
+    //       ?? MENUEX_TEMPLATE_ITEM[...] items;
+    //   }
 };
 
 void* write_text(std::wstring_view src, MENUEX_TEMPLATE_ITEM* item)
@@ -264,6 +264,109 @@ napi_value export_Menu_createFromTemplate(napi_env env, napi_callback_info info)
     return wrap_menu(env, load_menu_indirect(env, data));
 }
 
+napi_value export_Menu_show(napi_env env, napi_callback_info info)
+{
+    MenuObject* this_object;
+    int32_t mouse_x;
+    int32_t mouse_y;
+    NAPI_RETURN_NULL_IF_NOT_OK(napi_get_cb_info(
+        env,
+        info,
+        &this_object,
+        nullptr,
+        2,
+        &mouse_x,
+        &mouse_y));
+
+    auto env_data = get_env_data(env);
+
+    HMENU menu = this_object->menu;
+
+    auto item_id = (int32_t)TrackPopupMenuEx(
+        menu,
+        GetSystemMetrics(SM_MENUDROPALIGNMENT) | TPM_RETURNCMD | TPM_NONOTIFY,
+        mouse_x,
+        mouse_y,
+        env_data->msg_hwnd,
+        nullptr);
+
+    napi_value result;
+    NAPI_THROW_RETURN_NULL_IF_NOT_OK(env, napi_create(env, item_id, &result));
+    return result;
+}
+
+napi_value get_menu_item(napi_env env, MenuObject* menu_object, int32_t item_id_or_index, bool by_index)
+{
+    HMENU menu = menu_object->menu;
+
+    std::optional<std::wstring> text;
+
+    MENUITEMINFOW item = { sizeof (item) };
+    item.fMask = MIIM_ID | MIIM_FTYPE | MIIM_STATE;
+    if (!GetMenuItemInfoW(menu, item_id_or_index, by_index, &item))
+    {
+        napi_throw_win32_error(env, "GetMenuItemInfoW");
+        return nullptr;
+    }
+    if (item.fType == MFT_STRING)
+    {
+        item.fMask |= MIIM_STRING;
+        // fails with invalid parameter, as we didn't set dwTypeData
+        GetMenuItemInfoW(menu, item_id_or_index, by_index, &item);
+
+        text.emplace();
+        text->resize(item.cch);
+        ++item.cch;
+        item.dwTypeData = text->data();
+        if (!GetMenuItemInfoW(menu, item_id_or_index, by_index, &item))
+        {
+            napi_throw_win32_error(env, "GetMenuItemInfoW");
+            return nullptr;
+        }
+    }
+
+    napi_value item_value;
+    NAPI_THROW_RETURN_NULL_IF_NOT_OK(env, napi_create_object(env, &item_value, {
+        { "id", item.wID },
+        { "text", text },
+        { "separator", (item.fType & MFT_SEPARATOR) != 0 },
+        { "disabled", (item.fState & MFS_DISABLED) != 0 },
+        { "checked", (item.fState & MFS_CHECKED) != 0 },
+    }));
+
+    return item_value;
+}
+
+napi_value export_Menu_getById(napi_env env, napi_callback_info info)
+{
+    MenuObject* this_object;
+    int32_t item_id;
+    NAPI_RETURN_NULL_IF_NOT_OK(napi_get_cb_info(
+        env,
+        info,
+        &this_object,
+        nullptr,
+        1,
+        &item_id));
+
+    return get_menu_item(env, this_object, item_id, false);
+}
+
+napi_value export_Menu_getByIndex(napi_env env, napi_callback_info info)
+{
+    MenuObject* this_object;
+    int32_t item_id;
+    NAPI_RETURN_NULL_IF_NOT_OK(napi_get_cb_info(
+        env,
+        info,
+        &this_object,
+        nullptr,
+        1,
+        &item_id));
+
+    return get_menu_item(env, this_object, item_id, true);
+}
+
 napi_value export_Menu_update(napi_env env, napi_callback_info info)
 {
     MenuObject* this_object;
@@ -319,6 +422,9 @@ auto MenuObject::define_class(EnvData* env_data, napi_value* constructor_value) 
             napi_method_property("createFromTemplate", export_Menu_createFromTemplate, napi_static),
 
             napi_method_property("update", export_Menu_update),
+            napi_method_property("show", export_Menu_show),
+            napi_method_property("getById", export_Menu_getById),
+            napi_method_property("getByIndex", export_Menu_getByIndex),
         });
 }
 

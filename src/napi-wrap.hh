@@ -4,9 +4,8 @@
 #include "napi-ref.hh"
 
 template <typename T>
-struct NapiUnwrappedRef
+struct NapiUnwrappedRef : NapiRef
 {
-    NapiRef ref;
     T *wrapped;
 };
 
@@ -141,7 +140,7 @@ struct NapiWrapped
         }
         else
         {
-            NAPI_RETURN_IF_NOT_OK(result->ref.create(env, value));
+            NAPI_RETURN_IF_NOT_OK(result->create(env, value));
             result->wrapped = wrapped;
             return napi_ok;
         }

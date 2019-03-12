@@ -63,7 +63,6 @@ struct IconData
     bool large_balloon_icon = false;
     NapiUnwrappedRef<IconObject> icon_ref;
     NapiUnwrappedRef<IconObject> notification_icon_ref;
-    NapiUnwrappedRef<MenuObject> context_menu_ref;
     NapiAsyncCallback select_callback;
 };
 

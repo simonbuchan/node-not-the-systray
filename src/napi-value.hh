@@ -2,6 +2,7 @@
 
 #include "napi-core.hh"
 
+// We assume that wchar_t is UTF-16, since it should only have much usage on Windows.
 static_assert(sizeof(wchar_t) == sizeof(char16_t));
 
 // Looks weird, but it simplifies generic usages, like napi_get_many_values()
@@ -100,50 +101,89 @@ inline std::tuple<napi_status, const napi_value*> napi_get_many_values(
     return napi_get_many_values(env, argv + 1, results...);
 }
 
-// A hack to ensure bool isn't selected over e.g. std::string_view for char*,
-// which also means we should use forwarding to avoid copying std::strings.
-// You can still just add overloads for napi_create() if you won't hit this
-// dumb edge case, but napi_create_() will work too if you will.
-template <typename T>
-inline napi_status napi_create(napi_env env, T&& value, napi_value* result)
+// For generic usage
+inline napi_status napi_create(napi_env env, napi_value value, napi_value* result)
 {
-    return napi_create_(env, std::forward<T>(value), result);
+    *result = value;
+    return napi_ok;
 }
 
-template <>
-inline napi_status napi_create(napi_env env, bool&& value, napi_value* result)
+inline napi_status napi_create(napi_env env, bool value, napi_value* result)
 {
     return napi_get_boolean(env, value, result);
 }
 
-inline napi_status napi_create_(napi_env env, int32_t value, napi_value* result)
+inline napi_status napi_create(napi_env env, int32_t value, napi_value* result)
 {
     return napi_create_int32(env, value, result);
 }
 
-inline napi_status napi_create_(napi_env env, uint32_t value, napi_value* result)
+inline napi_status napi_create(napi_env env, uint32_t value, napi_value* result)
 {
     return napi_create_uint32(env, value, result);
 }
 
-inline napi_status napi_create_(napi_env env, double value, napi_value* result)
+inline napi_status napi_create(napi_env env, double value, napi_value* result)
 {
     return napi_create_double(env, value, result);
 }
 
-inline napi_status napi_create_(napi_env env, std::string_view value, napi_value* result)
+// Need to explicitly overload for C strings and string literals so they don't
+// decay to bool before invoking the string_view conversion.
+inline napi_status napi_create(napi_env env, const char* value, napi_value* result)
+{
+    return napi_create_string_utf8(env, value, NAPI_AUTO_LENGTH, result);
+}
+
+template <int N>
+inline napi_status napi_create(napi_env env, const char (&value)[N], napi_value* result)
+{
+    return napi_create_string_utf8(env, value, N-1, result);
+}
+
+inline napi_status napi_create(napi_env env, std::string_view value, napi_value* result)
 {
     return napi_create_string_utf8(env, value.data(), value.size(), result);
 }
 
-inline napi_status napi_create_(napi_env env, std::u16string_view value, napi_value* result)
+inline napi_status napi_create(napi_env env, const char16_t* value, napi_value* result)
+{
+    return napi_create_string_utf16(env, value, NAPI_AUTO_LENGTH, result);
+}
+
+template <int N>
+inline napi_status napi_create(napi_env env, const char16_t (&value)[N], napi_value* result)
+{
+    return napi_create_string_utf16(env, value, N-1, result);
+}
+
+inline napi_status napi_create(napi_env env, std::u16string_view value, napi_value* result)
 {
     return napi_create_string_utf16(env, value.data(), value.size(), result);
 }
 
-inline napi_status napi_create_(napi_env env, std::wstring_view value, napi_value* result)
+template <int N>
+inline napi_status napi_create(napi_env env, const wchar_t (&value)[N], napi_value* result)
+{
+    return napi_create_string_utf16(env, (const char16_t*) value, N-1, result);
+}
+
+inline napi_status napi_create(napi_env env, const wchar_t* value, napi_value* result)
+{
+    return napi_create_string_utf16(env, (const char16_t*) value, NAPI_AUTO_LENGTH, result);
+}
+
+inline napi_status napi_create(napi_env env, std::wstring_view value, napi_value* result)
 {
     return napi_create_string_utf16(env, (const char16_t*) value.data(), value.size(), result);
+}
+
+template <typename T>
+inline napi_status napi_create(napi_env env, std::optional<T> value, napi_value* result)
+{
+    if (value)
+        return napi_create(env, value.value(), result);
+    return napi_get_null(env, result);
 }
 
 template <typename... Ts>
@@ -170,3 +210,64 @@ inline std::tuple<napi_status, napi_value*> napi_create_many(
         return {status, results};
     return napi_create_many(env, results + 1, values...);
 }
+
+struct NapiHandleScope
+{
+    napi_env env = nullptr;
+    napi_handle_scope scope = nullptr;
+
+    NapiHandleScope() = default;
+
+    napi_status open(napi_env new_env)
+    {
+        if (scope)
+            NAPI_RETURN_IF_NOT_OK(napi_close_handle_scope(env, std::exchange(scope, nullptr)));
+        env = new_env;
+        return napi_open_handle_scope(env, &scope);
+    }
+
+    ~NapiHandleScope()
+    {
+        if (scope) napi_close_handle_scope(env, scope);
+    }
+
+    operator napi_handle_scope() const { return scope; }
+
+    NapiHandleScope(NapiHandleScope const&) = delete;
+    NapiHandleScope& operator=(NapiHandleScope const&) = delete;
+    NapiHandleScope(NapiHandleScope&&) = delete;
+    NapiHandleScope& operator=(NapiHandleScope&&) = delete;
+};
+
+struct NapiEscapableHandleScope
+{
+    napi_env env = nullptr;
+    napi_escapable_handle_scope scope = nullptr;
+
+    NapiEscapableHandleScope() = default;
+
+    napi_status open(napi_env new_env)
+    {
+        if (scope)
+            NAPI_RETURN_IF_NOT_OK(napi_close_escapable_handle_scope(env, std::exchange(scope, nullptr)));
+        env = new_env;
+        return napi_open_escapable_handle_scope(env, &scope);
+    }
+
+    napi_status escape(napi_value value, napi_value* result)
+    {
+        return napi_escape_handle(env, scope, value, result);
+    }
+
+    ~NapiEscapableHandleScope()
+    {
+        if (scope) napi_close_escapable_handle_scope(env, scope);
+    }
+
+    operator napi_escapable_handle_scope() const { return scope; }
+
+    NapiEscapableHandleScope(NapiEscapableHandleScope const&) = delete;
+    NapiEscapableHandleScope& operator=(NapiEscapableHandleScope const&) = delete;
+    NapiEscapableHandleScope(NapiEscapableHandleScope&&) = delete;
+    NapiEscapableHandleScope& operator=(NapiEscapableHandleScope&&) = delete;
+};

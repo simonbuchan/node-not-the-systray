@@ -116,8 +116,6 @@ struct notify_icon_options
     std::optional<std::wstring> tooltip;
     std::optional<notification_options> notification;
 
-    std::optional<MenuObject::Ref> context_menu_ref;
-
     std::optional<NapiAsyncCallback> select_callback;
 };
 
@@ -153,7 +151,6 @@ napi_status get_icon_options_common(napi_env env, napi_value value, notify_icon_
     NAPI_RETURN_IF_NOT_OK(napi_get_named_property(env, value, "tooltip", &options->tooltip));
     NAPI_RETURN_IF_NOT_OK(napi_get_named_property(env, value, "hidden", &options->hidden));
     NAPI_RETURN_IF_NOT_OK(napi_get_named_property(env, value, "notification", &options->notification));
-    NAPI_RETURN_IF_NOT_OK(napi_get_named_property(env, value, "contextMenu", &options->context_menu_ref));
     NAPI_RETURN_IF_NOT_OK(napi_get_named_property(env, value, "onSelect", &options->select_callback));
     return napi_ok;
 }
@@ -242,9 +239,6 @@ bool apply_options(notify_icon_options* options, NOTIFYICONDATAW* nid, IconData*
         nid->uFlags |= NIF_TIP | NIF_SHOWTIP;
         copy(options->tooltip.value(), nid->szTip);
     }
-
-    if (options->context_menu_ref)
-        icon_data->context_menu_ref = std::move(options->context_menu_ref.value());
 
     if (options->select_callback)
         icon_data->select_callback = std::move(options->select_callback.value());

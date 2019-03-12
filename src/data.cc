@@ -37,22 +37,6 @@ IconData* get_icon_data(napi_env env, int32_t icon_id)
     return nullptr;
 }
 
-IconData* get_icon_data_by_menu(napi_env env, HMENU menu, int32_t item_id)
-{
-    if (auto env_data = get_env_data(env); env_data)
-    {
-        for (auto& entry : env_data->icons)
-        {
-            if (entry.second.context_menu_ref.wrapped->menu == menu)
-            {
-                return &entry.second;
-            }
-        }
-    }
-
-    return nullptr;
-}
-
 static void message_pump_idle_cb(uv_idle_t* idle)
 {
     auto data = (EnvData*) idle->data;
@@ -94,47 +78,54 @@ void EnvData::stop_message_pump()
     uv_idle_start(&message_pump_idle, &message_pump_idle_cb);
 }
 
-LRESULT messageWndProc(HWND hwnd, UINT msg, WPARAM wparam, LPARAM lparam)
+LRESULT messageWndProc(HWND hwnd, UINT msg, WPARAM wParam, LPARAM lParam)
 {
     switch (msg)
     {
         case WM_CREATE:
         {
-            auto pcs = (CREATESTRUCTW*) lparam;
+            auto pcs = (CREATESTRUCTW*) lParam;
             SetWindowLongPtrW(hwnd, GWLP_USERDATA, (LONG_PTR) pcs->lpCreateParams);
             break;
         }
         case WM_TRAYICON_CALLBACK:
         {
-            switch (LOWORD(lparam))
+            switch (LOWORD(lParam))
             {
-                // case WM_LBUTTONUP:
-                // case WM_RBUTTONUP:
-                case WM_CONTEXTMENU:
-                // case NIN_POPUPOPEN:
                 case NIN_SELECT:
-                // case NIN_KEYSELECT:
+                case WM_CONTEXTMENU:
                     auto env = (napi_env) (void*) GetWindowLongPtrW(hwnd, GWLP_USERDATA);
-                    auto icon_id = HIWORD(lparam);
-                    if (auto icon_data = get_icon_data(env, icon_id);
-                        icon_data && icon_data->context_menu_ref.wrapped)
-                    {
-                        // Required to hide menu after select or click-outside.
-                        SetForegroundWindow(hwnd);
-                        HMENU menu = icon_data->context_menu_ref.wrapped->menu;
+                    auto icon_id = HIWORD(lParam);
+                    auto right_button = LOWORD(lParam) == WM_CONTEXTMENU;
+                    // needs sign-extension for multiple monitors
+                    // Equivalent to GET_X_LPARAM
+                    auto mouse_x = (int16_t)LOWORD(wParam);
+                    auto mouse_y = (int16_t)HIWORD(wParam);
 
-                        auto item_id = (int32_t)TrackPopupMenuEx(
-                            menu,
-                            GetSystemMetrics(SM_MENUDROPALIGNMENT) | TPM_RETURNCMD | TPM_NONOTIFY,
-                            // needs sign-extension for multiple monitors
-                            (int16_t)LOWORD(wparam),
-                            (int16_t)HIWORD(wparam),
-                            hwnd,
-                            nullptr);
-                        if (item_id && icon_data->select_callback)
-                        {
-                            icon_data->select_callback(item_id);
-                        }
+                    if (auto icon_data = get_icon_data(env, icon_id); !icon_data)
+                        return napi_ok;
+                    else
+                    {
+                        NapiHandleScope scope;
+                        scope.open(env);
+
+                        // Required to hide menu after select or click-outside, if you are going to show a menu.
+                        // Firing now rather than later as we can only take foreground while responding to
+                        // user interaction.
+                        SetForegroundWindow(hwnd);
+
+                        napi_value event;
+                        napi_create_object(
+                            env,
+                            &event,
+                            {
+                                {"iconId", icon_id},
+                                {"rightButton", right_button},
+                                {"mouseX", mouse_x},
+                                {"mouseY", mouse_y},
+                            });
+
+                        icon_data->select_callback(nullptr, event);
                     }
                     break;
             }
@@ -142,12 +133,12 @@ LRESULT messageWndProc(HWND hwnd, UINT msg, WPARAM wparam, LPARAM lparam)
         }
         // case WM_MENUSELECT:
         // {
-        //     auto menu = (HMENU) lparam;
-        //     auto flags = HIWORD(wparam);
+        //     auto menu = (HMENU) lParam;
+        //     auto flags = HIWORD(wParam);
         //     if (flags & MF_POPUP)
         //     {
         //         auto env = (napi_env) (void*) GetWindowLongPtrW(hwnd, GWLP_USERDATA);
-        //         int32_t item_id = LOWORD(wparam);
+        //         int32_t item_id = LOWORD(wParam);
         //         if (auto icon_data = get_icon_data_by_menu(env, menu, item_id);
         //             icon_data && icon_data->select_callback)
         //         {
@@ -156,7 +147,7 @@ LRESULT messageWndProc(HWND hwnd, UINT msg, WPARAM wparam, LPARAM lparam)
         // }
     }
 
-    return DefWindowProc(hwnd, msg, wparam, lparam);
+    return DefWindowProc(hwnd, msg, wParam, lParam);
 }
 
 ATOM windowClassId = 0;
@@ -205,6 +196,11 @@ std::tuple<napi_status, EnvData*> create_env_data(napi_env env)
         }
     }
 
+    // Please give me the real screen positions of clicks, but don't break other addons.
+    auto SetThreadDpiAwarenessContext = (DPI_AWARENESS_CONTEXT (*)(DPI_AWARENESS_CONTEXT)) GetProcAddress(GetModuleHandle(L"user32"), "SetThreadDpiAwarenessContext");
+
+    auto old_dpi_awareness = SetThreadDpiAwarenessContext(DPI_AWARENESS_CONTEXT_PER_MONITOR_AWARE_V2);
+
     HWND hwnd = CreateWindowW(
         (LPWSTR)windowClassId,
         L"Tray Message Window",
@@ -217,6 +213,9 @@ std::tuple<napi_status, EnvData*> create_env_data(napi_env env)
         nullptr, // menu
         hInstance, // instance
         env); // param
+
+    SetThreadDpiAwarenessContext(old_dpi_awareness);
+
     if (!hwnd)
     {
         napi_throw_win32_error(env, "CreateWindowW");
