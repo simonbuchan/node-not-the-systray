@@ -6,168 +6,122 @@
  */
 #pragma once
 
-#include "napi-core.hh"
 #include "napi-async.hh"
+#include "napi-core.hh"
 #include "napi-props.hh"
 #include "napi-value.hh"
 #include "napi-win32.hh"
 #include "napi-wrap.hh"
 
 template <typename This, typename... Args>
-inline napi_status napi_get_cb_info(
-    napi_env env,
-    napi_callback_info info,
-    This* this_arg,
-    void** data,
-    int required,
-    Args*... args)
-{
-    napi_value this_value = nullptr;
-    napi_value arg_values[sizeof...(args)];
-    size_t argc = sizeof...(args);
-    NAPI_RETURN_IF_NOT_OK(napi_get_cb_info(
-        env,
-        info,
-        &argc,
-        arg_values,
-        this_arg ? &this_value : nullptr,
-        data));
+inline napi_status napi_get_cb_info(napi_env env, napi_callback_info info,
+                                    This* this_arg, void** data, int required,
+                                    Args*... args) {
+  napi_value this_value = nullptr;
+  napi_value arg_values[sizeof...(args)];
+  size_t argc = sizeof...(args);
+  NAPI_RETURN_IF_NOT_OK(napi_get_cb_info(
+      env, info, &argc, arg_values, this_arg ? &this_value : nullptr, data));
 
-    if (argc < required)
-    {
-        napi_throw_error(env, nullptr, (
-            "Invalid args: provided "s + std::to_string(argc) +
-            " but requires "s + std::to_string(required) +
-            " arguments."s
-        ).c_str());
-        return napi_invalid_arg;
+  if (argc < required) {
+    napi_throw_error(
+        env, nullptr,
+        ("Invalid args: provided "s + std::to_string(argc) + " but requires "s +
+         std::to_string(required) + " arguments."s)
+            .c_str());
+    return napi_invalid_arg;
+  }
+
+  if (this_arg) {
+    if (auto status = napi_get_value(env, this_value, this_arg);
+        status != napi_ok) {
+      if (status == napi_pending_exception) return status;
+
+      const napi_extended_error_info* errorinfo;
+      NAPI_RETURN_IF_NOT_OK(napi_get_last_error_info(env, &errorinfo));
+
+      auto message = "Invalid 'this'"s;
+      if (errorinfo->error_message)
+        message.append(": "sv).append(errorinfo->error_message);
+      napi_throw_error(env, nullptr, message.c_str());
+      return status;
     }
+  }
 
-    if (this_arg)
-    {
-        if (auto status = napi_get_value(env, this_value, this_arg); status != napi_ok)
-        {
-            if (status == napi_pending_exception)
-                return status;
+  if (auto [status, status_value] =
+          napi_get_many_values(env, arg_values, args...);
+      status != napi_ok) {
+    if (status == napi_pending_exception) return status;
 
-            const napi_extended_error_info* errorinfo;
-            NAPI_RETURN_IF_NOT_OK(napi_get_last_error_info(env, &errorinfo));
+    const napi_extended_error_info* errorinfo;
+    NAPI_RETURN_IF_NOT_OK(napi_get_last_error_info(env, &errorinfo));
 
-            auto message = "Invalid 'this'"s;
-            if (errorinfo->error_message) message.append(": "sv).append(errorinfo->error_message);
-            napi_throw_error(env, nullptr, message.c_str());
-            return status;
-        }
-    }
+    auto message =
+        "Invalid argument "s + std::to_string(status_value - arg_values + 1);
+    if (errorinfo->error_message)
+      message.append(": "sv).append(errorinfo->error_message);
+    napi_throw_error(env, nullptr, message.c_str());
+    return status;
+  }
 
-    if (auto [status, status_value] = napi_get_many_values(env, arg_values, args...);
-        status != napi_ok)
-    {
-        if (status == napi_pending_exception)
-            return status;
-
-        const napi_extended_error_info* errorinfo;
-        NAPI_RETURN_IF_NOT_OK(napi_get_last_error_info(env, &errorinfo));
-
-        auto message = "Invalid argument "s + std::to_string(status_value - arg_values + 1);
-        if (errorinfo->error_message) message.append(": "sv).append(errorinfo->error_message);
-        napi_throw_error(env, nullptr, message.c_str());
-        return status;
-    }
-
-    return napi_ok;
+  return napi_ok;
 }
 
 template <typename... Args>
-inline napi_status napi_get_cb_info(
-    napi_env env,
-    napi_callback_info info,
-    nullptr_t this_arg,
-    void** data,
-    int required,
-    Args*... args)
-{
-    return napi_get_cb_info<void, Args...>(
-        env,
-        info,
-        this_arg,
-        data,
-        required,
-        args...);
+inline napi_status napi_get_cb_info(napi_env env, napi_callback_info info,
+                                    nullptr_t this_arg, void** data,
+                                    int required, Args*... args) {
+  return napi_get_cb_info<void, Args...>(env, info, this_arg, data, required,
+                                         args...);
 }
 
 template <typename... Args>
-inline napi_status napi_get_required_args(
-    napi_env env,
-    napi_callback_info info,
-    Args*... args)
-{
-    return napi_get_cb_info(
-        env,
-        info,
-        nullptr,
-        nullptr,
-        sizeof...(args),
-        args...);
+inline napi_status napi_get_required_args(napi_env env, napi_callback_info info,
+                                          Args*... args) {
+  return napi_get_cb_info(env, info, nullptr, nullptr, sizeof...(args),
+                          args...);
 }
 
 template <typename... Args>
-inline napi_status napi_get_args(
-    napi_env env,
-    napi_callback_info info,
-    int required_args,
-    Args*... args)
-{
-    return napi_get_cb_info(
-        env,
-        info,
-        nullptr,
-        nullptr,
-        required_args,
-        args...);
+inline napi_status napi_get_args(napi_env env, napi_callback_info info,
+                                 int required_args, Args*... args) {
+  return napi_get_cb_info(env, info, nullptr, nullptr, required_args, args...);
 }
 
 #if EXCEPTIONS
 // This doesn't work at all for some reason?
 #define EXPORT_METHOD(name) export_wrap_method_property(env, #name, name)
 
-struct napi_exception { napi_value value; };
+struct napi_exception {
+  napi_value value;
+};
 
-inline void wrap_callback(
-    napi_env env,
-    napi_callback callback,
-    napi_callback *callback_result,
-    void **data_result)
-{
-    *data_result = callback;
-    *callback_result = [](napi_env env, napi_callback_info info) -> napi_value {
-        napi_callback data;
-        if (napi_get_cb_info(env, info, nullptr, nullptr, nullptr, (void**) &data) != napi_ok) { return nullptr; }
+inline void wrap_callback(napi_env env, napi_callback callback,
+                          napi_callback* callback_result, void** data_result) {
+  *data_result = callback;
+  *callback_result = [](napi_env env, napi_callback_info info) -> napi_value {
+    napi_callback data;
+    if (napi_get_cb_info(env, info, nullptr, nullptr, nullptr, (void**)&data) !=
+        napi_ok) {
+      return nullptr;
+    }
 
-        try
-        {
-            return data(env, info);
-        }
-        catch (napi_exception& e)
-        {
-            napi_throw(env, e.value);
-            return nullptr;
-        }
-        catch (...)
-        {
-            return nullptr;
-        }
-    };
+    try {
+      return data(env, info);
+    } catch (napi_exception& e) {
+      napi_throw(env, e.value);
+      return nullptr;
+    } catch (...) {
+      return nullptr;
+    }
+  };
 }
 
 inline napi_property_descriptor export_wrap_method_property(
-    napi_env env,
-    const char *utf8name,
-    napi_callback method)
-{
-    napi_callback wrapped_method;
-    void* data;
-    wrap_callback(env, method, &wrapped_method, &data);
-    return export_method_property(utf8name, wrapped_method, data);
+    napi_env env, const char* utf8name, napi_callback method) {
+  napi_callback wrapped_method;
+  void* data;
+  wrap_callback(env, method, &wrapped_method, &data);
+  return export_method_property(utf8name, wrapped_method, data);
 }
 #endif
