@@ -1,12 +1,15 @@
 #pragma once
 
+// Prevent pulling in winsock.h in windows.h, which breaks uv.h
+#define WIN32_LEAN_AND_MEAN
+
 #include <functional>
 #include <unordered_map>
 
 #include <Windows.h>
 #include <uv.h>
 
-#include "napi.hh"
+#include "napi/napi.hh"
 
 constexpr UINT WM_TRAYICON_CALLBACK = WM_USER + 123;
 

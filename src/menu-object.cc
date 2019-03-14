@@ -94,7 +94,7 @@ struct menu_item {
     output->flags = 0;
     if (is_last) output->flags |= MF_END;
     if (items) output->flags |= 0x01;  // doesn't seem to have a definition
-    auto end = (byte*)(text ? write_text(text.value(), output)
+    auto end = (char*)(text ? write_text(text.value(), output)
                             : write_text(L""sv, output));
     if (items) {
       end += 4;
@@ -190,7 +190,7 @@ static MenuHandle create_menu(napi_env env, std::vector<menu_item> items) {
   dummy_item.items = std::move(items);
 
   auto size = 8 + dummy_item.template_size();
-  auto data = std::make_unique<byte[]>(size);
+  auto data = std::make_unique<char[]>(size);
   memset(data.get(), 0, size);
 
   {

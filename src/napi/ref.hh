@@ -1,6 +1,6 @@
 #pragma once
 
-#include "napi-core.hh"
+#include "napi/core.hh"
 
 struct NapiRef {
   napi_env env = nullptr;

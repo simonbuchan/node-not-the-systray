@@ -6,12 +6,12 @@
  */
 #pragma once
 
-#include "napi-async.hh"
-#include "napi-core.hh"
-#include "napi-props.hh"
-#include "napi-value.hh"
-#include "napi-win32.hh"
-#include "napi-wrap.hh"
+#include "napi/async.hh"
+#include "napi/core.hh"
+#include "napi/props.hh"
+#include "napi/value.hh"
+#include "napi/win32.hh"
+#include "napi/wrap.hh"
 
 template <typename This, typename... Args>
 inline napi_status napi_get_cb_info(napi_env env, napi_callback_info info,

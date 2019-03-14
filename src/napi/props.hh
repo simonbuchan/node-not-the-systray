@@ -1,6 +1,6 @@
 #pragma once
 
-#include "napi-value.hh"
+#include "napi/value.hh"
 
 inline napi_status napi_define_properties(
     napi_env env, napi_value object,

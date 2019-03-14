@@ -1,6 +1,6 @@
 #pragma once
 
-#include "napi-core.hh"
+#include "napi/core.hh"
 
 // We assume that wchar_t is UTF-16, since it should only have much usage on
 // Windows.

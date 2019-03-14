@@ -4,8 +4,10 @@
 #include "data.hh"
 #include "icon-object.hh"
 #include "menu-object.hh"
-#include "napi.hh"
+#include "napi/napi.hh"
 #include "parse_guid.hh"
+
+#include <shellapi.h>
 
 using namespace std::string_literals;
 

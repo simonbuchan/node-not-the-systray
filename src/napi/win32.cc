@@ -1,7 +1,7 @@
-#include "napi-win32.hh"
+#include "napi/win32.hh"
 
-#include "napi-props.hh"
-#include "napi-value.hh"
+#include "napi/props.hh"
+#include "napi/value.hh"
 
 #include <Windows.h>
 

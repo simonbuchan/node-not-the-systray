@@ -1,7 +1,7 @@
 #pragma once
 
 #include "data.hh"
-#include "napi-wrap.hh"
+#include "napi/wrap.hh"
 
 struct IconObject : NapiWrapped<IconObject> {
   HICON icon = nullptr;

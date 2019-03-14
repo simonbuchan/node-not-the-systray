@@ -1,7 +1,7 @@
 #pragma once
 
-#include "napi-ref.hh"
-#include "napi-value.hh"
+#include "napi/ref.hh"
+#include "napi/value.hh"
 
 struct NapiAsyncContext {
   napi_env env = nullptr;

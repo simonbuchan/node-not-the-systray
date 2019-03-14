@@ -1,4 +1,4 @@
-#include "napi-props.hh"
+#include "napi/props.hh"
 
 #include <vector>
 

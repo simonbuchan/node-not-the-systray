@@ -1,7 +1,7 @@
 #pragma once
 
 #include "data.hh"
-#include "napi-wrap.hh"
+#include "napi/wrap.hh"
 
 struct MenuObject : NapiWrapped<MenuObject> {
   MenuHandle menu;

@@ -1,7 +1,7 @@
 #pragma once
 
-#include "napi-core.hh"
-#include "napi-ref.hh"
+#include "napi/core.hh"
+#include "napi/ref.hh"
 
 template <typename T>
 struct NapiUnwrappedRef : NapiRef {

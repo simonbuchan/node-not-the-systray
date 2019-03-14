@@ -4,6 +4,8 @@
 #include <map>
 #include <mutex>
 
+#include <shellapi.h>
+
 // Hack to get the DLL instance without a DllMain()
 EXTERN_C IMAGE_DOS_HEADER __ImageBase;
 #pragma warning(disable : 4047)

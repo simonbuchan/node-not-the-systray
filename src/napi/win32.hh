@@ -1,6 +1,6 @@
 #pragma once
 
-#include "napi-core.hh"
+#include "napi/core.hh"
 
 typedef long HRESULT;
 
