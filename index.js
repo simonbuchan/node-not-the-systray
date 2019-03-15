@@ -30,39 +30,14 @@ Object.defineProperties(Icon, {
     load: {
         enumerable: true,
         value: function Icon_load(pathOrId, size) {
-            switch (size) {
-                case "small":
-                    size = { width: Icon.smallWidth, height: Icon.smallHeight };
-                    break;
-                case "large":
-                    size = { width: Icon.largeWidth, height: Icon.largeHeight };
-                    break;
-            }
-            if (!size || typeof size.width !== "number" || typeof size.height !== "number") {
-                throw new Error("'size' should be either 'small', 'large', or { width, height }.");
-            }
             switch (typeof pathOrId) {
                 default:
                     throw new Error("'pathOrId' should be either a file path or a property of Icon.ids.");
                 case "number":
-                    return Icon.loadBuiltin(pathOrId, size.width, size.height);
+                    return Icon.loadBuiltin(pathOrId, size);
                 case "string":
-                    return Icon.loadFile(pathOrId, size.width, size.height);
+                    return Icon.loadFile(pathOrId, size);
             }
-        },
-    },
-    loadFileSmall: {
-        enumerable: true,
-        value: function Icon_loadFileSmall(path) {
-            const { loadFile, smallWidth, smallHeight } = Icon;
-            return loadFile(path, smallWidth, smallHeight);
-        },
-    },
-    loadFileLarge: {
-        enumerable: true,
-        value: function Icon_loadFileLarge(path) {
-            const { loadFile, largeWidth, largeHeight } = Icon;
-            return loadFile(path, largeWidth, largeHeight);
         },
     },
 });

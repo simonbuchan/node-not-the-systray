@@ -70,6 +70,23 @@ inline napi_status napi_get_value(napi_env env, napi_value value,
 }
 
 template <typename T>
+napi_status napi_get_value(napi_env env, napi_value value,
+                           std::vector<T>* result) {
+  uint32_t length = 0;
+  NAPI_RETURN_IF_NOT_OK(napi_get_array_length(env, value, &length));
+  result->resize(length);
+  for (uint32_t index = 0; index != length; index++) {
+    napi_value item_value;
+    if (napi_get_element(env, value, index, &item_value) != napi_ok ||
+        napi_get_value(env, item_value, &(*result)[index]) != napi_ok) {
+      return napi_rethrow_with_location(env, "item "s + std::to_string(index));
+    }
+  }
+
+  return napi_ok;
+}
+
+template <typename T>
 inline napi_status napi_get_value(napi_env env, napi_value value,
                                   std::optional<T>* result) {
   napi_valuetype type;

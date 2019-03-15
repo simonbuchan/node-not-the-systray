@@ -8,9 +8,9 @@
 
 // Hack to get the DLL instance without a DllMain()
 EXTERN_C IMAGE_DOS_HEADER __ImageBase;
-#pragma warning(disable : 4047)
-HINSTANCE hInstance = (HINSTANCE)&__ImageBase;
-#pragma warning(default : 4047)
+HINSTANCE get_image_instance() {
+  return reinterpret_cast<HINSTANCE>(&__ImageBase);
+}
 
 // If you have multiple environments in one process,
 // then you have multiple threads.
@@ -162,6 +162,8 @@ std::tuple<napi_status, EnvData*> create_env_data(napi_env env) {
   }
   uv_idle_init(loop, &data->message_pump_idle);
 
+  auto hInstance = get_image_instance();
+
   if (!windowClassId) {
     WNDCLASSW wc = {};
     wc.lpszClassName = L"Tray Message Window";
@@ -179,6 +181,11 @@ std::tuple<napi_status, EnvData*> create_env_data(napi_env env) {
   auto SetThreadDpiAwarenessContext =
       (DPI_AWARENESS_CONTEXT(*)(DPI_AWARENESS_CONTEXT))GetProcAddress(
           GetModuleHandle(L"user32"), "SetThreadDpiAwarenessContext");
+  if (!SetThreadDpiAwarenessContext) {
+    SetThreadDpiAwarenessContext = [](DPI_AWARENESS_CONTEXT context) {
+      return context;
+    };
+  }
 
   auto old_dpi_awareness =
       SetThreadDpiAwarenessContext(DPI_AWARENESS_CONTEXT_PER_MONITOR_AWARE_V2);

@@ -1,28 +1,35 @@
 #include "icon-object.hh"
 
+napi_status napi_get_value(napi_env env, napi_value value,
+                           icon_size_t* result) {
+  NAPI_RETURN_IF_NOT_OK(
+      napi_get_named_property(env, value, "width", &result->width));
+  NAPI_RETURN_IF_NOT_OK(
+      napi_get_named_property(env, value, "height", &result->height));
+  return napi_ok;
+}
+
 napi_value export_Icon_loadBuiltin(napi_env env, napi_callback_info info) {
   uint32_t id;
-  int32_t width, height;
-  NAPI_RETURN_NULL_IF_NOT_OK(
-      napi_get_required_args(env, info, &id, &width, &height));
+  icon_size_t size;
+  NAPI_RETURN_NULL_IF_NOT_OK(napi_get_required_args(env, info, &id, &size));
 
   auto env_data = get_env_data(env);
   napi_value result;
-  NAPI_RETURN_NULL_IF_NOT_OK(IconObject::load(
-      env_data, MAKEINTRESOURCE(id), width, height, LR_SHARED, &result));
+  NAPI_RETURN_NULL_IF_NOT_OK(IconObject::load(env_data, MAKEINTRESOURCE(id),
+                                              size, LR_SHARED, &result));
   return result;
 }
 
 napi_value export_Icon_loadFile(napi_env env, napi_callback_info info) {
   std::wstring path;
-  int32_t width, height;
-  NAPI_RETURN_NULL_IF_NOT_OK(
-      napi_get_required_args(env, info, &path, &width, &height));
+  icon_size_t size;
+  NAPI_RETURN_NULL_IF_NOT_OK(napi_get_required_args(env, info, &path, &size));
 
   auto env_data = get_env_data(env);
   napi_value result;
-  NAPI_RETURN_NULL_IF_NOT_OK(IconObject::load(
-      env_data, path.c_str(), width, height, LR_LOADFROMFILE, &result));
+  NAPI_RETURN_NULL_IF_NOT_OK(
+      IconObject::load(env_data, path.c_str(), size, LR_LOADFROMFILE, &result));
   return result;
 }
 
@@ -80,13 +87,26 @@ IconObject::~IconObject() {
 
 napi_status IconObject::define_class(EnvData* env_data,
                                      napi_value* constructor_value) {
-  return NapiWrapped::define_class(
-      env_data->env, "Icon", constructor_value, &env_data->icon_constructor,
+  auto env = env_data->env;
+  napi_value small_value, large_value;
+  NAPI_RETURN_IF_NOT_OK(napi_create_object(
+      env, &small_value,
       {
-          system_metric_property("smallWidth", SM_CXSMICON, napi_static),
-          system_metric_property("smallHeight", SM_CYSMICON, napi_static),
-          system_metric_property("largeWidth", SM_CXICON, napi_static),
-          system_metric_property("largeHeight", SM_CYICON, napi_static),
+          system_metric_property("width", SM_CXSMICON, napi_static),
+          system_metric_property("height", SM_CYSMICON, napi_static),
+      }));
+  NAPI_RETURN_IF_NOT_OK(napi_create_object(
+      env, &large_value,
+      {
+          system_metric_property("width", SM_CXICON, napi_static),
+          system_metric_property("height", SM_CYICON, napi_static),
+      }));
+
+  return NapiWrapped::define_class(
+      env, "Icon", constructor_value, &env_data->icon_constructor,
+      {
+          napi_value_property("small", small_value, napi_static),
+          napi_value_property("large", large_value, napi_static),
           napi_method_property("loadBuiltin", export_Icon_loadBuiltin,
                                napi_static),
           napi_method_property("loadFile", export_Icon_loadFile, napi_static),
@@ -96,13 +116,13 @@ napi_status IconObject::define_class(EnvData* env_data,
       });
 }
 
-napi_status IconObject::load(EnvData* env_data, LPCWSTR path, int32_t width,
-                             int32_t height, DWORD flags, napi_value* result) {
+napi_status IconObject::load(EnvData* env_data, LPCWSTR path, icon_size_t size,
+                             DWORD flags, napi_value* result) {
   auto env = env_data->env;
   auto shared = (flags & LR_SHARED) != 0;
 
-  auto icon =
-      (HICON)LoadImageW(nullptr, path, IMAGE_ICON, width, height, flags);
+  auto icon = (HICON)LoadImageW(nullptr, path, IMAGE_ICON, size.width,
+                                size.height, flags);
 
   if (!icon) {
     napi_throw_win32_error(env, "LoadImageW");
@@ -121,8 +141,8 @@ napi_status IconObject::load(EnvData* env_data, LPCWSTR path, int32_t width,
   } else {
     wrapped->icon = icon;
     wrapped->shared = shared;
-    wrapped->width = width;
-    wrapped->height = height;
+    wrapped->width = size.width;
+    wrapped->height = size.height;
     *result = wrapper;
     return napi_ok;
   }

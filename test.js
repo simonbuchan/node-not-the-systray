@@ -1,19 +1,16 @@
-const util = require("util");
-const guid = "ded73175-c489-4f7e-acdc-3dbdde784468";
-const id = 1;
-
 catchErrors(() => {
-    const tray = require('.');
+    const guid = "ded73175-c489-4f7e-acdc-3dbdde784468";
+    const id = 1;
 
-    const icon = tray.Icon.load(tray.Icon.ids.warning, "small");
-    // const icon = tray.Icon.loadFileSmall("test-2.ico");
-    // const icon = tray.Icon.load("test-2.ico", "small");
-    // const notificationIcon = tray.Icon.loadBuiltin(tray.icons.app, tray.Icon.largeWidth, tray.Icon.largeHeight);
-    const notificationIcon = tray.Icon.loadFileLarge("test-1.ico");
+    const tray = require('.');
+    const { Icon, Menu } = tray;
+
+    const icon = Icon.load(Icon.ids.warning, Icon.small);
+    const notificationIcon = Icon.load("test-1.ico", Icon.large);
 
     let count = 0;
 
-    const contextMenu = tray.Menu.create([
+    const contextMenu = Menu.create([
         { id: 123, text: "Checkable", checked: true },
         { separator: true },
         { id: 124, text: "Counter" },

@@ -47,8 +47,11 @@ template <typename T>
 inline napi_status napi_get_named_property(napi_env env, napi_value object,
                                            const char *utf8name, T *result) {
   napi_value value = nullptr;
-  NAPI_RETURN_IF_NOT_OK(napi_get_named_property(env, object, utf8name, &value));
-  return napi_get_value(env, value, result);
+  if (napi_get_named_property(env, object, utf8name, &value) != napi_ok ||
+      napi_get_value(env, value, result) != napi_ok) {
+    return napi_rethrow_with_location(env, "property '"s + utf8name + "'");
+  }
+  return napi_ok;
 }
 
 template <typename T>
@@ -60,6 +63,10 @@ inline napi_status napi_set_named_property(napi_env env, napi_value object,
       napi_create(env, std::forward<T>(native_value), &value));
   return napi_set_named_property(env, object, utf8name, value);
 }
+
+napi_status napi_create_object(
+    napi_env env, napi_value *result,
+    std::initializer_list<napi_property_descriptor> descriptors);
 
 struct napi_erased_output {
   const void *erased_value;

@@ -6,6 +6,8 @@
  */
 #pragma once
 
+#include <string>
+
 #include "napi/async.hh"
 #include "napi/core.hh"
 #include "napi/props.hh"
@@ -35,33 +37,14 @@ inline napi_status napi_get_cb_info(napi_env env, napi_callback_info info,
   if (this_arg) {
     if (auto status = napi_get_value(env, this_value, this_arg);
         status != napi_ok) {
-      if (status == napi_pending_exception) return status;
-
-      const napi_extended_error_info* errorinfo;
-      NAPI_RETURN_IF_NOT_OK(napi_get_last_error_info(env, &errorinfo));
-
-      auto message = "Invalid 'this'"s;
-      if (errorinfo->error_message)
-        message.append(": "sv).append(errorinfo->error_message);
-      napi_throw_error(env, nullptr, message.c_str());
-      return status;
+      return napi_rethrow_with_location(env, "this parameter"sv);
     }
   }
 
   if (auto [status, status_value] =
           napi_get_many_values(env, arg_values, args...);
       status != napi_ok) {
-    if (status == napi_pending_exception) return status;
-
-    const napi_extended_error_info* errorinfo;
-    NAPI_RETURN_IF_NOT_OK(napi_get_last_error_info(env, &errorinfo));
-
-    auto message =
-        "Invalid argument "s + std::to_string(status_value - arg_values + 1);
-    if (errorinfo->error_message)
-      message.append(": "sv).append(errorinfo->error_message);
-    napi_throw_error(env, nullptr, message.c_str());
-    return status;
+    return napi_rethrow_with_location(env, "parameter "s + std::to_string(status_value - arg_values + 1));
   }
 
   return napi_ok;

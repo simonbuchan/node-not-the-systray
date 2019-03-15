@@ -1,7 +1,5 @@
 #include "menu-object.hh"
 
-#include <vector>
-
 struct MENUEX_TEMPLATE_HEADER {
   uint16_t version;
   uint16_t offset;
@@ -129,21 +127,6 @@ struct menu_item {
     }
   }
 };
-
-template <typename T>
-napi_status napi_get_value(napi_env env, napi_value value,
-                           std::vector<T>* result) {
-  uint32_t length = 0;
-  NAPI_RETURN_IF_NOT_OK(napi_get_array_length(env, value, &length));
-  result->resize(length);
-  for (uint32_t index = 0; index != length; index++) {
-    napi_value item_value;
-    NAPI_RETURN_IF_NOT_OK(napi_get_element(env, value, index, &item_value));
-    NAPI_RETURN_IF_NOT_OK(napi_get_value(env, item_value, &(*result)[index]));
-  }
-
-  return napi_ok;
-}
 
 napi_status napi_get_value(napi_env env, napi_value value, menu_item* result) {
   NAPI_RETURN_IF_NOT_OK(napi_get_named_property(env, value, "id", &result->id));

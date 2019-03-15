@@ -6,6 +6,7 @@
                 "src"
             ],
             "sources": [
+                "src/napi/core.cc",
                 "src/napi/props.cc",
                 "src/napi/win32.cc",
                 "src/data.cc",

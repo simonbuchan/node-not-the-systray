@@ -4,6 +4,14 @@
 
 napi_status napi_create_object(
     napi_env env, napi_value* result,
+    std::initializer_list<napi_property_descriptor> descriptors) {
+  NAPI_RETURN_IF_NOT_OK(napi_create_object(env, result));
+  NAPI_RETURN_IF_NOT_OK(napi_define_properties(env, *result, descriptors));
+  return napi_ok;
+}
+
+napi_status napi_create_object(
+    napi_env env, napi_value* result,
     std::initializer_list<napi_output_property> properties) {
   NapiEscapableHandleScope scope;
   NAPI_RETURN_IF_NOT_OK(scope.open(env));

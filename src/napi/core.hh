@@ -4,6 +4,7 @@
 #include <optional>
 #include <string>
 #include <string_view>
+#include <vector>
 
 #include <node_api.h>
 
@@ -60,9 +61,9 @@ using namespace std::string_view_literals;
     }                                                    \
   } while (false)
 
-#define NAPI_FATAL_IF(napi_expr)           \
-  do {                                     \
-    if (napi_expr) NAPI_FATAL(#napi_expr); \
+#define NAPI_FATAL_IF(expr)      \
+  do {                           \
+    if (expr) NAPI_FATAL(#expr); \
   } while (false)
 
 #define NAPI_FATAL_IF_NOT_OK(napi_expr)              \
@@ -75,35 +76,6 @@ using namespace std::string_view_literals;
 #define NAPI_FATAL(msg) \
   napi_fatal_error(__FUNCTION__, NAPI_AUTO_LENGTH, msg, NAPI_AUTO_LENGTH)
 
-inline napi_status napi_throw_last_error(napi_env env) {
-  bool is_pending = false;
-  NAPI_FATAL_IF_NOT_OK(napi_is_exception_pending(env, &is_pending));
-  if (is_pending) {
-    return napi_pending_exception;
-  }
+napi_status napi_throw_last_error(napi_env env);
 
-  const napi_extended_error_info* info = nullptr;
-  NAPI_FATAL_IF_NOT_OK(napi_get_last_error_info(env, &info));
-
-  switch (info->error_code) {
-    case napi_ok:
-    case napi_pending_exception:
-      return info->error_code;
-
-    case napi_object_expected:
-    case napi_string_expected:
-    case napi_name_expected:
-    case napi_function_expected:
-    case napi_number_expected:
-    case napi_boolean_expected:
-    case napi_array_expected:
-    case napi_bigint_expected:
-      NAPI_FATAL_IF_NOT_OK(
-          napi_throw_type_error(env, nullptr, info->error_message));
-      return napi_pending_exception;
-
-    default:
-      NAPI_FATAL_IF_NOT_OK(napi_throw_error(env, nullptr, info->error_message));
-      return napi_pending_exception;
-  }
-}
+napi_status napi_rethrow_with_location(napi_env env, std::string_view location);
