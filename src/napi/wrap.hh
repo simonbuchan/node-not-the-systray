@@ -8,13 +8,15 @@ struct NapiUnwrappedRef : NapiRef {
   T* wrapped;
 };
 
+struct NapiWrappedTypeObject {};
+
 template <typename T>
 struct NapiWrapped {
   // Checks unwrap is safe by comparing a header pointer to this object
-  inline static int type_object = 0;
+  inline static NapiWrappedTypeObject type_object;
 
   struct TypeWrapper {
-    int* type_ptr = &type_object;
+    NapiWrappedTypeObject* type_ptr = &type_object;
     T value;
   };
 
@@ -38,9 +40,8 @@ struct NapiWrapped {
 
   static napi_value constructor(napi_env env, napi_callback_info info) {
     napi_value this_value = nullptr;
-    NAPI_RETURN_NULL_IF_NOT_OK(
-        napi_get_cb_info(env, info, nullptr, nullptr, &this_value, nullptr));
     auto ptr = std::make_unique<TypeWrapper>();
+    NAPI_RETURN_NULL_IF_NOT_OK(ptr->value.init(env, info, &this_value));
     NAPI_RETURN_NULL_IF_NOT_OK(
         napi_wrap(env, this_value, ptr.get(), finalize, nullptr, nullptr));
     ptr.release();
@@ -106,6 +107,10 @@ struct NapiWrapped {
   }
 
  protected:
+  napi_status init(napi_env env, napi_callback_info info, napi_value* result) {
+    return napi_get_cb_info(env, info, nullptr, nullptr, result, nullptr);
+  }
+
   NapiWrapped() = default;
   NapiWrapped(NapiWrapped const&) = delete;
   NapiWrapped(NapiWrapped&&) = delete;

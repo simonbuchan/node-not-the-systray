@@ -47,6 +47,7 @@ struct Unique {
 using WndHandle = Unique<HWND, DestroyWindow>;
 using MenuHandle = Unique<HMENU, DestroyMenu>;
 
+struct NotifyIconObject;
 struct MenuObject;
 struct IconObject;
 
@@ -61,7 +62,10 @@ struct IconData {
 };
 
 struct EnvData {
+  // Note that there's not much point trying to clean up these on
+  // being destroyed, as that is when the environment is being destroyed.
   napi_env env = nullptr;
+  napi_ref notify_icon_constructor = nullptr;
   napi_ref menu_constructor = nullptr;
   napi_ref icon_constructor = nullptr;
   WndHandle msg_hwnd;

@@ -44,9 +44,21 @@ inline napi_status napi_get_cb_info(napi_env env, napi_callback_info info,
   if (auto [status, status_value] =
           napi_get_many_values(env, arg_values, args...);
       status != napi_ok) {
-    return napi_rethrow_with_location(env, "parameter "s + std::to_string(status_value - arg_values + 1));
+    return napi_rethrow_with_location(
+        env, "parameter "s + std::to_string(status_value - arg_values + 1));
   }
 
+  return napi_ok;
+}
+
+template <typename T>
+inline napi_status napi_get_this_arg(napi_env env, napi_callback_info info,
+                                     T* this_arg) {
+  napi_value this_value;
+  NAPI_RETURN_IF_NOT_OK(napi_get_cb_info(env, info, nullptr, nullptr, &this_value, nullptr));
+  if (napi_get_value(env, this_value, this_arg) != napi_ok) {
+    return napi_rethrow_with_location(env, "this parameter"sv);
+  }
   return napi_ok;
 }
 

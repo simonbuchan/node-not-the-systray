@@ -70,6 +70,27 @@ void EnvData::stop_message_pump() {
   uv_idle_start(&message_pump_idle, &message_pump_idle_cb);
 }
 
+napi_status notify_icon_select(napi_env env, IconData* icon_data,
+                               bool right_button, int16_t mouse_x,
+                               int16_t mouse_y) {
+  napi_value icon_value;
+  NAPI_RETURN_IF_NOT_OK(
+      napi_get_reference_value(env, icon_data->icon_ref.ref, &icon_value));
+
+  napi_value event;
+  NAPI_RETURN_IF_NOT_OK(napi_create_object(env, &event,
+                                           {
+                                               {"icon", icon_value},
+                                               {"rightButton", right_button},
+                                               {"mouseX", mouse_x},
+                                               {"mouseY", mouse_y},
+                                           }));
+
+  NAPI_RETURN_IF_NOT_OK(icon_data->select_callback(nullptr, event));
+
+  return napi_ok;
+}
+
 LRESULT messageWndProc(HWND hwnd, UINT msg, WPARAM wParam, LPARAM lParam) {
   switch (msg) {
     case WM_CREATE: {
@@ -80,7 +101,13 @@ LRESULT messageWndProc(HWND hwnd, UINT msg, WPARAM wParam, LPARAM lParam) {
     case WM_TRAYICON_CALLBACK: {
       switch (LOWORD(lParam)) {
         case NIN_SELECT:
+        case NIN_KEYSELECT:
         case WM_CONTEXTMENU:
+          // Required to hide menu after select or click-outside, if you are
+          // going to show a menu. Firing now rather than later as we can only
+          // take foreground while responding to user interaction.
+          SetForegroundWindow(hwnd);
+
           auto env = (napi_env)(void*)GetWindowLongPtrW(hwnd, GWLP_USERDATA);
           auto icon_id = HIWORD(lParam);
           auto right_button = LOWORD(lParam) == WM_CONTEXTMENU;
@@ -89,45 +116,29 @@ LRESULT messageWndProc(HWND hwnd, UINT msg, WPARAM wParam, LPARAM lParam) {
           auto mouse_x = (int16_t)LOWORD(wParam);
           auto mouse_y = (int16_t)HIWORD(wParam);
 
-          if (auto icon_data = get_icon_data(env, icon_id); !icon_data)
-            return napi_ok;
-          else {
+          if (auto icon_data = get_icon_data(env, icon_id); icon_data) {
             NapiHandleScope scope;
-            scope.open(env);
+            NAPI_FATAL_IF_NOT_OK(scope.open(env));
 
-            // Required to hide menu after select or click-outside, if you are
-            // going to show a menu. Firing now rather than later as we can only
-            // take foreground while responding to user interaction.
-            SetForegroundWindow(hwnd);
-
-            napi_value event;
-            napi_create_object(env, &event,
-                               {
-                                   {"iconId", icon_id},
-                                   {"rightButton", right_button},
-                                   {"mouseX", mouse_x},
-                                   {"mouseY", mouse_y},
-                               });
-
-            icon_data->select_callback(nullptr, event);
+            if (notify_icon_select(env, icon_data, right_button, mouse_x,
+                                   mouse_y) != napi_ok) {
+              napi_throw_async_last_error(env);
+            }
           }
           break;
       }
       break;
     }
-      // case WM_MENUSELECT:
-      // {
-      //     auto menu = (HMENU) lParam;
-      //     auto flags = HIWORD(wParam);
-      //     if (flags & MF_POPUP)
-      //     {
-      //         auto env = (napi_env) (void*) GetWindowLongPtrW(hwnd,
-      //         GWLP_USERDATA); int32_t item_id = LOWORD(wParam); if (auto
-      //         icon_data = get_icon_data_by_menu(env, menu, item_id);
-      //             icon_data && icon_data->select_callback)
-      //         {
-      //         }
+      // case WM_MENUSELECT: {
+      //   auto menu = (HMENU)lParam;
+      //   auto flags = HIWORD(wParam);
+      //   if (flags & MF_POPUP) {
+      //     auto env = (napi_env)(void*)GetWindowLongPtrW(hwnd, GWLP_USERDATA);
+      //     int32_t item_id = LOWORD(wParam);
+      //     if (auto icon_data = get_icon_data_by_menu(env, menu, item_id);
+      //         icon_data && icon_data->select_callback) {
       //     }
+      //   }
       // }
   }
 

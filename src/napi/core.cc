@@ -60,6 +60,11 @@ napi_status napi_throw_last_error(napi_env env) {
   return napi_throw(env, napi_get_and_clear_last_error(env));
 }
 
+void napi_throw_async_last_error(napi_env env) {
+  // Very different to `napi_fatal_error()`: this triggers an `uncaughtException`.
+  NAPI_FATAL_IF_NOT_OK(napi_fatal_exception(env, napi_get_and_clear_last_error(env)));
+}
+
 napi_status napi_rethrow_with_location(napi_env env,
                                        std::string_view location) {
   std::string message;

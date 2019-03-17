@@ -221,7 +221,7 @@ napi_value export_Menu_createFromTemplate(napi_env env,
   return wrap_menu(env, load_menu_indirect(env, data));
 }
 
-napi_value export_Menu_show(napi_env env, napi_callback_info info) {
+napi_value export_Menu_showSync(napi_env env, napi_callback_info info) {
   MenuObject* this_object;
   int32_t mouse_x;
   int32_t mouse_y;
@@ -242,10 +242,8 @@ napi_value export_Menu_show(napi_env env, napi_callback_info info) {
   return result;
 }
 
-napi_value get_menu_item(napi_env env, MenuObject* menu_object,
-                         int32_t item_id_or_index, bool by_index) {
-  HMENU menu = menu_object->menu;
-
+napi_value get_menu_item(napi_env env, HMENU menu, int32_t item_id_or_index,
+                         bool by_index) {
   std::optional<std::wstring> text;
 
   MENUITEMINFOW item = {sizeof(item)};
@@ -284,55 +282,73 @@ napi_value get_menu_item(napi_env env, MenuObject* menu_object,
   return item_value;
 }
 
-napi_value export_Menu_getById(napi_env env, napi_callback_info info) {
-  MenuObject* this_object;
-  int32_t item_id;
-  NAPI_RETURN_NULL_IF_NOT_OK(
-      napi_get_cb_info(env, info, &this_object, nullptr, 1, &item_id));
-
-  return get_menu_item(env, this_object, item_id, false);
-}
-
-napi_value export_Menu_getByIndex(napi_env env, napi_callback_info info) {
-  MenuObject* this_object;
-  int32_t item_id;
-  NAPI_RETURN_NULL_IF_NOT_OK(
-      napi_get_cb_info(env, info, &this_object, nullptr, 1, &item_id));
-
-  return get_menu_item(env, this_object, item_id, true);
-}
-
-napi_value export_Menu_update(napi_env env, napi_callback_info info) {
-  MenuObject* this_object;
-  int32_t index;
-  menu_item options;
-  NAPI_RETURN_NULL_IF_NOT_OK(
-      napi_get_cb_info(env, info, &this_object, nullptr, 2, &index, &options));
-
+napi_value update_menu_item(napi_env env, HMENU menu, int32_t item_id_or_value,
+                            bool by_index, menu_item options) {
   MENUITEMINFOW item = {sizeof(item)};
 
   // So we can update individual flags.
-  if (!GetMenuItemInfoW(this_object->menu, index, true, &item)) {
+  if (!GetMenuItemInfoW(menu, item_id_or_value, by_index, &item)) {
     napi_throw_win32_error(env, "GetMenuItemInfoW");
     return nullptr;
   }
 
   options.update_item_info(&item);
 
-  MenuHandle menu;
+  MenuHandle items_menu;
   if (options.items) {
     item.fMask |= MIIM_SUBMENU;
-    menu = create_menu(env, std::move(options.items.value()));
+    items_menu = create_menu(env, std::move(options.items.value()));
+    item.hSubMenu = items_menu;
   }
 
-  if (!SetMenuItemInfoW(this_object->menu, index, true, &item)) {
+  if (!SetMenuItemInfoW(menu, item_id_or_value, by_index, &item)) {
     napi_throw_win32_error(env, "SetMenuItemInfoW");
     return nullptr;
   }
-  // Now it's owned by this_object->menu
-  menu.release();
+  // Now it's owned by menu
+  items_menu.release();
 
   return nullptr;
+}
+
+napi_value export_Menu_getAt(napi_env env, napi_callback_info info) {
+  MenuObject* this_object;
+  int32_t index;
+  NAPI_RETURN_NULL_IF_NOT_OK(
+      napi_get_cb_info(env, info, &this_object, nullptr, 1, &index));
+
+  return get_menu_item(env, this_object->menu, index, true);
+}
+
+napi_value export_Menu_get(napi_env env, napi_callback_info info) {
+  MenuObject* this_object;
+  int32_t item_id;
+  NAPI_RETURN_NULL_IF_NOT_OK(
+      napi_get_cb_info(env, info, &this_object, nullptr, 1, &item_id));
+
+  return get_menu_item(env, this_object->menu, item_id, false);
+}
+
+napi_value export_Menu_updateAt(napi_env env, napi_callback_info info) {
+  MenuObject* this_object;
+  int32_t index;
+  menu_item options;
+  NAPI_RETURN_NULL_IF_NOT_OK(
+      napi_get_cb_info(env, info, &this_object, nullptr, 2, &index, &options));
+
+  return update_menu_item(env, this_object->menu, index, true,
+                          std::move(options));
+}
+
+napi_value export_Menu_update(napi_env env, napi_callback_info info) {
+  MenuObject* this_object;
+  int32_t item_id;
+  menu_item options;
+  NAPI_RETURN_NULL_IF_NOT_OK(napi_get_cb_info(env, info, &this_object, nullptr,
+                                              2, &item_id, &options));
+
+  return update_menu_item(env, this_object->menu, item_id, false,
+                          std::move(options));
 }
 
 auto MenuObject::define_class(EnvData* env_data, napi_value* constructor_value)
@@ -340,14 +356,11 @@ auto MenuObject::define_class(EnvData* env_data, napi_value* constructor_value)
   return NapiWrapped::define_class(
       env_data->env, "Menu", constructor_value, &env_data->menu_constructor,
       {
-          napi_method_property("create", export_Menu_create, napi_static),
-          napi_method_property("createFromTemplate",
-                               export_Menu_createFromTemplate, napi_static),
-
+          napi_method_property("showSync", export_Menu_showSync),
+          napi_method_property("getAt", export_Menu_getAt),
+          napi_method_property("get", export_Menu_get),
+          napi_method_property("updateAt", export_Menu_updateAt),
           napi_method_property("update", export_Menu_update),
-          napi_method_property("show", export_Menu_show),
-          napi_method_property("getById", export_Menu_getById),
-          napi_method_property("getByIndex", export_Menu_getByIndex),
       });
 }
 
@@ -358,4 +371,25 @@ auto MenuObject::new_instance(EnvData* env_data, MenuHandle menu) -> NewResult {
     result.wrapped->menu = std::move(menu);
   }
   return result;
+}
+
+napi_status MenuObject::init(napi_env env, napi_callback_info info,
+                             napi_value* result) {
+  napi_value value;
+  NAPI_RETURN_IF_NOT_OK(
+      napi_get_cb_info(env, info, result, nullptr, 1, &value));
+
+  bool is_array;
+  NAPI_RETURN_IF_NOT_OK(napi_is_array(env, value, &is_array));
+  if (is_array) {
+    std::vector<menu_item> items;
+    NAPI_RETURN_IF_NOT_OK(napi_get_value(env, value, &items));
+    menu = create_menu(env, std::move(items));
+  } else {
+    void* data = nullptr;
+    size_t size = 0;
+    NAPI_RETURN_IF_NOT_OK(napi_get_buffer_info(env, value, &data, &size));
+    menu = load_menu_indirect(env, data);
+  }
+  return napi_ok;
 }

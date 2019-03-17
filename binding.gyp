@@ -12,6 +12,7 @@
                 "src/data.cc",
                 "src/icon-object.cc",
                 "src/menu-object.cc",
+                "src/notify-icon-object.cc",
                 "src/parse_guid.cc",
                 "src/module.cc"
             ],

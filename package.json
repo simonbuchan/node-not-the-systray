@@ -2,12 +2,21 @@
     "name": "@simonbuchan/tray",
     "private": true,
     "gypfile": false,
+    "files": [
+        "index.js",
+        "inded.d.ts",
+        "build/Release/tray.node"
+    ],
     "scripts": {
         "install": "echo using pre-built",
         "rebuild": "node-gyp rebuild",
-        "build": "node-gyp build --silent"
+        "build": "node-gyp build --silent",
+        "test": "ts-node -P test/tsconfig.json test/index.ts"
     },
     "devDependencies": {
-        "node-gyp": "^3.8.0"
+        "@types/node": "^8.0.0",
+        "node-gyp": "^3.8.0",
+        "typescript": "~3.3.3333",
+        "ts-node": "^8.0.3"
     }
 }

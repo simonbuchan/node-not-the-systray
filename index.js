@@ -11,7 +11,6 @@ const { Icon, Menu } = bindings;
 
 Object.defineProperties(Menu, {
     createTemplate: { value: createMenuTemplate, enumerable: true },
-    // create: { value: createMenu, enumerable: true },
 });
 
 Object.defineProperties(Icon, {
@@ -41,10 +40,6 @@ Object.defineProperties(Icon, {
         },
     },
 });
-
-function createMenu(items) {
-    return bindings.Menu.createFromTemplate(createMenuTemplate(items));
-}
 
 function createMenuTemplate(items) {
     // Generates a MENUEX binary resource structure to be

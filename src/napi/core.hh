@@ -79,3 +79,5 @@ using namespace std::string_view_literals;
 napi_status napi_throw_last_error(napi_env env);
 
 napi_status napi_rethrow_with_location(napi_env env, std::string_view location);
+
+void napi_throw_async_last_error(napi_env env);
