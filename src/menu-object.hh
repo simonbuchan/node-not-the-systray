@@ -2,6 +2,9 @@
 
 #include "data.hh"
 #include "napi/wrap.hh"
+#include "unique.hh"
+
+using MenuHandle = Unique<HMENU, DestroyMenu>;
 
 struct MenuObject : NapiWrapped<MenuObject> {
   MenuHandle menu;

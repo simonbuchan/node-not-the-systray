@@ -182,7 +182,7 @@ napi_status napi_get_value(napi_env env, napi_value value,
 }
 
 void apply_notification(notification_options* options, NOTIFYICONDATAW* nid,
-                        IconData* icon_data) {
+                        NotifyIconObject* this_object) {
   nid->uFlags |= NIF_INFO;
   if (options->realtime.value_or(false)) nid->uFlags |= NIF_REALTIME;
   if (!options->sound.value_or(true)) nid->dwInfoFlags |= NIIF_NOSOUND;
@@ -190,16 +190,16 @@ void apply_notification(notification_options* options, NOTIFYICONDATAW* nid,
     nid->dwInfoFlags |= NIIF_RESPECT_QUIET_TIME;
 
   if (options->icon_ref) {
-    icon_data->notification_icon_ref = std::move(options->icon_ref.value());
+    this_object->notification_icon_ref = std::move(options->icon_ref.value());
     nid->dwInfoFlags |= NIIF_USER;
-    auto icon_object = icon_data->notification_icon_ref.wrapped;
+    auto icon_object = this_object->notification_icon_ref.wrapped;
     nid->hBalloonIcon = icon_object->icon;
     if (icon_object->width == GetSystemMetrics(SM_CXICON) &&
         icon_object->height == GetSystemMetrics(SM_CYICON)) {
       nid->dwInfoFlags |= NIIF_LARGE_ICON;
     }
   } else {
-    icon_data->notification_icon_ref = {};
+    this_object->notification_icon_ref = {};
   }
 
   copy(options->title.value_or(L""s), nid->szInfoTitle);
@@ -207,7 +207,7 @@ void apply_notification(notification_options* options, NOTIFYICONDATAW* nid,
 }
 
 void apply_options(notify_icon_options* options, NOTIFYICONDATAW* nid,
-                   IconData* icon_data) {
+                   NotifyIconObject* this_object) {
   if (options->hidden) {
     nid->uFlags |= NIF_STATE;
     nid->dwStateMask |= NIS_HIDDEN;
@@ -216,9 +216,9 @@ void apply_options(notify_icon_options* options, NOTIFYICONDATAW* nid,
 
   if (options->icon_ref) {
     nid->uFlags |= NIF_ICON;
-    icon_data->icon_ref = std::move(options->icon_ref.value());
+    this_object->icon_ref = std::move(options->icon_ref.value());
 
-    nid->hIcon = icon_data->icon_ref.wrapped->icon;
+    nid->hIcon = this_object->icon_ref.wrapped->icon;
   }
 
   if (options->tooltip) {
@@ -227,15 +227,14 @@ void apply_options(notify_icon_options* options, NOTIFYICONDATAW* nid,
   }
 
   if (options->select_callback)
-    icon_data->select_callback = std::move(options->select_callback.value());
+    this_object->select_callback = std::move(options->select_callback.value());
 
   if (options->notification)
-    apply_notification(&options->notification.value(), nid, icon_data);
+    apply_notification(&options->notification.value(), nid, this_object);
 }
 
 napi_status NotifyIconObject::init(napi_env env, napi_callback_info info,
                                    napi_value* result) {
-  GUID guid;
   notify_icon_add_options options;
   NAPI_RETURN_IF_NOT_OK(
       napi_get_cb_info(env, info, result, nullptr, 1, &guid, &options));
@@ -245,14 +244,7 @@ napi_status NotifyIconObject::init(napi_env env, napi_callback_info info,
 
   auto env_data = get_env_data(env);
 
-  if (env_data->icons.empty()) {
-    env_data->start_message_pump();
-  }
-
-  auto icon_data = &env_data->icons[id];
-  icon_data->env = env;
-  icon_data->id = id;
-  icon_data->guid = guid;
+  env_data->add_icon(id, *result, this);
 
   NOTIFYICONDATAW nid = {sizeof(nid)};
   nid.uID = id;
@@ -261,7 +253,7 @@ napi_status NotifyIconObject::init(napi_env env, napi_callback_info info,
   nid.uFlags = NIF_GUID | NIF_MESSAGE;
   nid.uCallbackMessage = WM_TRAYICON_CALLBACK;
 
-  apply_options(&options, &nid, icon_data);
+  apply_options(&options, &nid, this);
 
   // Shell_NotifyIcon() fails with "Unspecified error" 0x80004005 if it already
   // exists, including from a previous process that has exited without removing
@@ -272,8 +264,7 @@ napi_status NotifyIconObject::init(napi_env env, napi_callback_info info,
   }
 
   // Shell_NotifyIcon() isn't documented to return errors via GetLastError(),
-  // but it seems like it sometimes returns something valid. Clear it here
-  // just so we don't have a chance of returning an invalid error message.
+  // but it seems like it does... sort of. Just in case, clear it.
   SetLastError(0);
 
   if (!Shell_NotifyIcon(NIM_ADD, &nid)) {
@@ -295,7 +286,8 @@ napi_value export_NotifyIcon_id(napi_env env, napi_callback_info info) {
   NotifyIconObject* this_object;
   NAPI_RETURN_NULL_IF_NOT_OK(napi_get_this_arg(env, info, &this_object));
   napi_value result;
-  NAPI_THROW_RETURN_NULL_IF_NOT_OK(env, napi_create(env, this_object->id, &result));
+  NAPI_THROW_RETURN_NULL_IF_NOT_OK(env,
+                                   napi_create(env, this_object->id, &result));
   return result;
 }
 
@@ -305,18 +297,11 @@ napi_value export_NotifyIcon_update(napi_env env, napi_callback_info info) {
   NAPI_RETURN_NULL_IF_NOT_OK(
       napi_get_cb_info(env, info, &this_object, nullptr, 1, &options));
 
-  auto env_data = get_env_data(env);
-  auto icon_data = env_data->get_icon_data(this_object->id);
-  if (!icon_data) {
-    napi_throw_error(env, nullptr, "invalid id.");
-    return nullptr;
-  }
-
   NOTIFYICONDATAW nid = {sizeof(nid)};
-  nid.guidItem = icon_data->guid;
+  nid.guidItem = this_object->guid;
   nid.uFlags = NIF_GUID;
 
-  apply_options(&options, &nid, icon_data);
+  apply_options(&options, &nid, this_object);
 
   // Shell_NotifyIcon() isn't documented to return errors via GetLastError(),
   // but it seems like it sometimes returns something valid. Clear it here
@@ -330,31 +315,27 @@ napi_value export_NotifyIcon_update(napi_env env, napi_callback_info info) {
   return nullptr;
 }
 
-napi_value export_NotifyIcon_remove(napi_env env, napi_callback_info info) {
-  NotifyIconObject* this_object;
-  NAPI_RETURN_NULL_IF_NOT_OK(napi_get_this_arg(env, info, &this_object));
-
+napi_status NotifyIconObject::remove(napi_env env) {
   auto env_data = get_env_data(env);
-  auto icon_data = env_data->get_icon_data(this_object->id);
-  if (!icon_data) {
-    // Don't error, delete should be idempotent.
-    return nullptr;
-  }
 
   NOTIFYICONDATAW nid = {sizeof(nid)};
-  nid.guidItem = icon_data->guid;
+  nid.guidItem = guid;
   nid.uFlags = NIF_GUID;
 
   if (!Shell_NotifyIcon(NIM_DELETE, &nid)) {
     napi_throw_win32_error(env, "Shell_NotifyIconW");
-    return nullptr;
+    return napi_pending_exception;
   }
 
-  env_data->icons.erase(this_object->id);
-  if (env_data->icons.empty()) {
-    env_data->stop_message_pump();
-  }
+  env_data->remove_icon(id);
 
+  return napi_ok;
+}
+
+napi_value export_NotifyIcon_remove(napi_env env, napi_callback_info info) {
+  NotifyIconObject* this_object;
+  NAPI_RETURN_NULL_IF_NOT_OK(napi_get_this_arg(env, info, &this_object));
+  NAPI_RETURN_NULL_IF_NOT_OK(this_object->remove(env));
   return nullptr;
 }
 
@@ -368,4 +349,23 @@ napi_status NotifyIconObject::define_class(EnvData* env_data,
           napi_method_property("update", export_NotifyIcon_update),
           napi_method_property("remove", export_NotifyIcon_remove),
       });
+}
+
+napi_status NotifyIconObject::select(napi_env env, napi_value this_value,
+                                     bool right_button, int16_t mouse_x,
+                                     int16_t mouse_y) {
+  napi_value event;
+  NAPI_RETURN_IF_NOT_OK(napi_create_object(env, &event,
+                                           {
+                                               {"target", this_value},
+                                               {"rightButton", right_button},
+                                               {"mouseX", mouse_x},
+                                               {"mouseY", mouse_y},
+                                           }));
+
+  if (select_callback(this_value, {event}) == nullptr) {
+    return napi_generic_failure;
+  }
+
+  return napi_ok;
 }

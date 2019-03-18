@@ -1,5 +1,4 @@
 import { NotifyIcon, Icon, Menu } from "../";
-import * as fs from "fs";
 
 class TestError extends Error {
     name = 'TestError';
@@ -21,6 +20,7 @@ catchErrors(() => {
     const contextMenu = new Menu([
         { id: 123, text: "Checkable", checked: true },
         { separator: true },
+        { id: 103, text: "Time", disabled: true },
         { id: 124, text: "Counter" },
         { text: "Notification" },
         {

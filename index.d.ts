@@ -187,7 +187,7 @@ export namespace NotifyIcon {
          * A standard response is to invoke `Menu#showSync(event.mouseX, event.mouseY)`
          * for some menu.
          */
-        onSelect?: (this: void, event: SelectEvent) => void;
+        onSelect?: (this: NotifyIcon, event: SelectEvent) => void;
     }
 
     /**

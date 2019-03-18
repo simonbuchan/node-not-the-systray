@@ -1,6 +1,7 @@
 #pragma once
 
 #include "data.hh"
+#include "icon-object.hh"
 #include "napi/wrap.hh"
 
 struct NotifyIconObject : NapiWrapped<NotifyIconObject> {
@@ -8,6 +9,16 @@ struct NotifyIconObject : NapiWrapped<NotifyIconObject> {
                                   napi_value* constructor_value);
 
   int32_t id;
+  GUID guid;
+  bool large_balloon_icon = false;
+  NapiUnwrappedRef<IconObject> icon_ref;
+  NapiUnwrappedRef<IconObject> notification_icon_ref;
+  NapiAsyncCallback select_callback;
+
+  napi_status select(napi_env env, napi_value this_value, bool right_button,
+                     int16_t mouse_x, int16_t mouse_y);
+
+  napi_status remove(napi_env env);
 
  private:
   friend NapiWrapped;

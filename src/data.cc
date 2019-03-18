@@ -1,5 +1,5 @@
 #include "data.hh"
-#include "menu-object.hh"
+#include "notify-icon-object.hh"
 
 #include <map>
 #include <mutex>
@@ -27,14 +27,6 @@ EnvData* get_env_data(napi_env env) {
   return nullptr;
 }
 
-IconData* get_icon_data(napi_env env, int32_t icon_id) {
-  if (auto env_data = get_env_data(env); env_data) {
-    return env_data->get_icon_data(icon_id);
-  }
-
-  return nullptr;
-}
-
 static void message_pump_idle_cb(uv_idle_t* idle) {
   auto data = (EnvData*)idle->data;
 
@@ -54,40 +46,45 @@ static void message_pump_idle_cb(uv_idle_t* idle) {
   }
 }
 
-IconData* EnvData::get_icon_data(int32_t icon_id) {
-  if (auto it = icons.find(icon_id); it != icons.end()) {
-    return &it->second;
+napi_status EnvData::add_icon(int32_t id, napi_value value,
+                              NotifyIconObject* object) {
+  if (icons.empty()) {
+    uv_idle_start(&message_pump_idle, &message_pump_idle_cb);
   }
-
-  return nullptr;
+  napi_ref ref;
+  NAPI_RETURN_IF_NOT_OK(napi_create_reference(env, value, 1, &ref));
+  icons.insert({id, {ref, object}});
+  return napi_ok;
 }
 
-void EnvData::start_message_pump() {
-  uv_idle_start(&message_pump_idle, &message_pump_idle_cb);
+void EnvData::remove_icon(int32_t id) {
+  if (auto it = icons.find(id); it != icons.end()) {
+    napi_reference_unref(env, it->second.ref, nullptr);
+    icons.erase(id);
+    if (icons.empty()) {
+      uv_idle_stop(&message_pump_idle);
+    }
+  }
 }
 
-void EnvData::stop_message_pump() {
-  uv_idle_start(&message_pump_idle, &message_pump_idle_cb);
+EnvData::~EnvData() {
+  for (auto it = icons.begin(); it != icons.end(); it = icons.begin()) {
+    // remove will invalidate the iterator.
+    it->second.object->remove(env);
+  }
 }
 
-napi_status notify_icon_select(napi_env env, IconData* icon_data,
-                               bool right_button, int16_t mouse_x,
-                               int16_t mouse_y) {
-  napi_value icon_value;
-  NAPI_RETURN_IF_NOT_OK(
-      napi_get_reference_value(env, icon_data->icon_ref.ref, &icon_value));
-
-  napi_value event;
-  NAPI_RETURN_IF_NOT_OK(napi_create_object(env, &event,
-                                           {
-                                               {"icon", icon_value},
-                                               {"rightButton", right_button},
-                                               {"mouseX", mouse_x},
-                                               {"mouseY", mouse_y},
-                                           }));
-
-  NAPI_RETURN_IF_NOT_OK(icon_data->select_callback(nullptr, event));
-
+static napi_status notify_select(EnvData* env_data, int32_t icon_id,
+                                 bool right_button, int32_t mouse_x,
+                                 int32_t mouse_y) {
+  if (auto it = env_data->icons.find(icon_id); it != env_data->icons.end()) {
+    auto env = env_data->env;
+    napi_value value;
+    NAPI_RETURN_IF_NOT_OK(
+        napi_get_reference_value(env, it->second.ref, &value));
+    NAPI_RETURN_IF_NOT_OK(
+        it->second.object->select(env, value, right_button, mouse_x, mouse_y));
+  }
   return napi_ok;
 }
 
@@ -116,31 +113,30 @@ LRESULT messageWndProc(HWND hwnd, UINT msg, WPARAM wParam, LPARAM lParam) {
           auto mouse_x = (int16_t)LOWORD(wParam);
           auto mouse_y = (int16_t)HIWORD(wParam);
 
-          if (auto icon_data = get_icon_data(env, icon_id); icon_data) {
+          if (auto env_data = get_env_data(env); env_data) {
             NapiHandleScope scope;
+            // if this fails, we can't even throw an error!
             NAPI_FATAL_IF_NOT_OK(scope.open(env));
-
-            if (notify_icon_select(env, icon_data, right_button, mouse_x,
-                                   mouse_y) != napi_ok) {
+            if (notify_select(env_data, icon_id, right_button, mouse_x,
+                              mouse_y) != napi_ok) {
               napi_throw_async_last_error(env);
             }
           }
-          break;
       }
       break;
     }
-      // case WM_MENUSELECT: {
-      //   auto menu = (HMENU)lParam;
-      //   auto flags = HIWORD(wParam);
-      //   if (flags & MF_POPUP) {
-      //     auto env = (napi_env)(void*)GetWindowLongPtrW(hwnd, GWLP_USERDATA);
-      //     int32_t item_id = LOWORD(wParam);
-      //     if (auto icon_data = get_icon_data_by_menu(env, menu, item_id);
-      //         icon_data && icon_data->select_callback) {
-      //     }
-      //   }
-      // }
   }
+  // case WM_MENUSELECT: {
+  //   auto menu = (HMENU)lParam;
+  //   auto flags = HIWORD(wParam);
+  //   if (flags & MF_POPUP) {
+  //     auto env = (napi_env)(void*)GetWindowLongPtrW(hwnd, GWLP_USERDATA);
+  //     int32_t item_id = LOWORD(wParam);
+  //     if (auto icon_data = get_icon_data_by_menu(env, menu, item_id);
+  //         icon_data && icon_data->select_callback) {
+  //     }
+  //   }
+  // }
 
   return DefWindowProc(hwnd, msg, wParam, lParam);
 }

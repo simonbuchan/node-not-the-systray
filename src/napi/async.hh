@@ -103,42 +103,22 @@ struct NapiAsyncCallback : NapiRef {
     return napi_ok;
   }
 
-  template <typename... Args>
-  napi_status operator()(napi_value* result, Args&&... args) const {
-    NapiEscapableHandleScope handle_scope;
-    NAPI_RETURN_IF_NOT_OK(handle_scope.open(env));
-
-    // recv is checked for nullptr, but can be napi undefined.
-    // See https://github.com/nodejs/node/issues/26342
-    napi_value recv;
-    NAPI_RETURN_IF_NOT_OK(napi_get_undefined(env, &recv));
+  napi_value operator()(napi_value recv,
+                        std::initializer_list<napi_value> args) const {
+    napi_value result = nullptr;
 
     NapiCallbackScope callback_scope;
-    NAPI_RETURN_IF_NOT_OK(callback_scope.open(context));
+    NAPI_RETURN_NULL_IF_NOT_OK(callback_scope.open(context));
 
     napi_value func = nullptr;
-    NAPI_RETURN_IF_NOT_OK(NapiRef::get(&func));
+    NAPI_RETURN_NULL_IF_NOT_OK(NapiRef::get(&func));
 
-    napi_value arg_values[sizeof...(args)];
-    napi_value result_value = nullptr;
-    if (auto [status, status_arg_value] =
-            napi_create_many(env, arg_values, std::forward<Args>(args)...);
+    if (auto status = napi_call_function(env, recv, func, args.size(),
+                                         args.begin(), &result);
         status != napi_ok) {
       napi_throw_last_error(env);
-      return napi_pending_exception;
     }
 
-    if (auto status = napi_call_function(env, recv, func, sizeof...(args),
-                                         arg_values, &result_value);
-        status != napi_ok) {
-      napi_throw_last_error(env);
-      return napi_pending_exception;
-    }
-
-    if (result) {
-      NAPI_RETURN_IF_NOT_OK(handle_scope.escape(result_value, result));
-    }
-
-    return napi_ok;
+    return result;
   }
 };
