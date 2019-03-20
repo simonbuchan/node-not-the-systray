@@ -31,6 +31,19 @@ inline napi_property_descriptor napi_getter_property(
   return desc;
 }
 
+inline napi_property_descriptor napi_getter_setter_property(
+    const char *utf8name, napi_callback getter, napi_callback setter,
+    napi_property_attributes attributes = napi_enumerable,
+    void *data = nullptr) {
+  napi_property_descriptor desc = {};
+  desc.utf8name = utf8name;
+  desc.getter = getter;
+  desc.setter = setter;
+  desc.attributes = attributes;
+  desc.data = data;
+  return desc;
+}
+
 inline napi_property_descriptor napi_method_property(
     const char *utf8name, napi_callback method,
     napi_property_attributes attributes = napi_enumerable,

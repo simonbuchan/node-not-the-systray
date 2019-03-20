@@ -2,14 +2,15 @@
 
 #include "data.hh"
 #include "icon-object.hh"
+#include "notify-icon.hh"
 #include "napi/wrap.hh"
 
 struct NotifyIconObject : NapiWrapped<NotifyIconObject> {
   static napi_status define_class(EnvData* env_data,
                                   napi_value* constructor_value);
 
-  int32_t id;
-  GUID guid;
+  napi_env env_ = nullptr;
+  NotifyIcon notify_icon;
   bool large_balloon_icon = false;
   NapiUnwrappedRef<IconObject> icon_ref;
   NapiUnwrappedRef<IconObject> notification_icon_ref;

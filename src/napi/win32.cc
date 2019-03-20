@@ -36,7 +36,7 @@ napi_status napi_create_win32_error(napi_env env, const char* syscall,
       napi_set_named_property(env, error, "name", "Win32Error"));
   NAPI_RETURN_IF_NOT_OK(
       napi_set_named_property(env, error, "syscall", syscall));
-  NAPI_RETURN_IF_NOT_OK(napi_set_named_property(env, error, "errno", code));
+  NAPI_RETURN_IF_NOT_OK(napi_set_named_property(env, error, "errno", (uint32_t) code));
   *result = error;
   return napi_ok;
 }

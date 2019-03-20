@@ -99,6 +99,16 @@ inline napi_status napi_get_value(napi_env env, napi_value value,
   return napi_ok;
 }
 
+struct napi_buffer_info {
+  void* data;
+  size_t size;
+};
+
+inline napi_status napi_get_value(napi_env env, napi_value value,
+                                  napi_buffer_info* result) {
+  return napi_get_buffer_info(env, value, &result->data, &result->size);
+}
+
 template <typename... Ts>
 std::tuple<napi_status, const napi_value*> napi_get_many_values(
     napi_env env, const napi_value* argv, Ts*... results) = delete;

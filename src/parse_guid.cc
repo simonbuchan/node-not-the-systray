@@ -4,13 +4,13 @@ template <typename T>
 bool parse_hex(std::string_view source, T* result) {
   T value = (T)0;
   for (auto c : source) {
+    value <<= (T)4;
     if (isdigit(c))
       value |= (T)(c - '0');
     else if (isxdigit(c))
       value |= (T)(toupper(c) - 'A' + 10);
     else
       return false;
-    value <<= (T)4;
   }
   *result = value;
   return true;

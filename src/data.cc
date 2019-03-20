@@ -53,24 +53,25 @@ napi_status EnvData::add_icon(int32_t id, napi_value value,
   }
   napi_ref ref;
   NAPI_RETURN_IF_NOT_OK(napi_create_reference(env, value, 1, &ref));
-  icons.insert({id, {ref, object}});
+  if (icons
+          .insert({id,
+                   {ref, object->notify_icon.id.callback_id,
+                    object->notify_icon.id.guid}})
+          .second == false) {
+    NAPI_RETURN_IF_NOT_OK(napi_delete_reference(env, ref));
+  }
   return napi_ok;
 }
 
-void EnvData::remove_icon(int32_t id) {
-  if (auto it = icons.find(id); it != icons.end()) {
-    napi_reference_unref(env, it->second.ref, nullptr);
-    icons.erase(id);
+bool EnvData::remove_icon(int32_t id) {
+  if (auto it = icons.find(id); it == icons.end()) {
+    return false;
+  } else {
+    icons.erase(it);
     if (icons.empty()) {
       uv_idle_stop(&message_pump_idle);
     }
-  }
-}
-
-EnvData::~EnvData() {
-  for (auto it = icons.begin(); it != icons.end(); it = icons.begin()) {
-    // remove will invalidate the iterator.
-    it->second.object->remove(env);
+    return true;
   }
 }
 
@@ -82,8 +83,10 @@ static napi_status notify_select(EnvData* env_data, int32_t icon_id,
     napi_value value;
     NAPI_RETURN_IF_NOT_OK(
         napi_get_reference_value(env, it->second.ref, &value));
+    NotifyIconObject* object;
+    NAPI_RETURN_IF_NOT_OK(napi_get_value(env, value, &object));
     NAPI_RETURN_IF_NOT_OK(
-        it->second.object->select(env, value, right_button, mouse_x, mouse_y));
+        object->select(env, value, right_button, mouse_x, mouse_y));
   }
   return napi_ok;
 }
@@ -126,17 +129,6 @@ LRESULT messageWndProc(HWND hwnd, UINT msg, WPARAM wParam, LPARAM lParam) {
       break;
     }
   }
-  // case WM_MENUSELECT: {
-  //   auto menu = (HMENU)lParam;
-  //   auto flags = HIWORD(wParam);
-  //   if (flags & MF_POPUP) {
-  //     auto env = (napi_env)(void*)GetWindowLongPtrW(hwnd, GWLP_USERDATA);
-  //     int32_t item_id = LOWORD(wParam);
-  //     if (auto icon_data = get_icon_data_by_menu(env, menu, item_id);
-  //         icon_data && icon_data->select_callback) {
-  //     }
-  //   }
-  // }
 
   return DefWindowProc(hwnd, msg, wParam, lParam);
 }
@@ -218,4 +210,10 @@ std::tuple<napi_status, EnvData*> create_env_data(napi_env env) {
   data->msg_hwnd = hwnd;
 
   return {napi_ok, data};
+}
+
+EnvData::~EnvData() {
+  for (auto& pair : icons) {
+    delete_notify_icon({msg_hwnd, pair.second.id, pair.second.guid});
+  }
 }

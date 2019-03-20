@@ -205,6 +205,26 @@ export namespace NotifyIcon {
      */
     export interface NewOptions extends Options {
         /**
+         * Persistent identifier for this icon.
+         * Must be either a 16-byte `Buffer` or a string in the standard UUID/GUID format, matching
+         * `/^[0-9a-fA-F]{8}-[0-9a-fA-F]{4}-[0-9a-fA-F]{4}-[0-9a-fA-F]{4}-[0-9a-fA-F]{12}$/`,
+         * e.g. `"01234567-89ab-cdef-0123-456789abcdef"`.
+         *
+         * `guid` is a unique id used by Windows to preserve user preferences
+         * for this icon. As it is a persistent identifier, do not generate values
+         * for this at runtime using, e.g. the `uuid` package, generate them once
+         * and save it as a constant in your code.
+         *
+         * Only one icon can use the same `guid` at a time, even between processes.
+         * 
+         * Be cautious about using this feature, as it reserves the guid for the
+         * executable path and has weird reliablility issues, but it can avoid
+         * duplicate settings entries for the notification icon.
+         * 
+         * https://github.com/electron/electron/issues/2468
+         */
+        guid?: string;
+        /**
          * Automatically delete any previous icon added with the same `guid`.
          * Windows only allows one instance of the icon to be added at a time,
          * and will fail with `Win32Error: Unspecified error.` if it already
@@ -220,24 +240,12 @@ export namespace NotifyIcon {
 export class NotifyIcon {
     /**
      * Add a notification icon to the notification area (system tray).
-     *
-     * `guid` is a unique id used by Windows to preserve user preferences
-     * for this icon. As it is a persistent identifier, do not generate values
-     * for this at runtime using, e.g. the `uuid` package, generate them once
-     * and save it as a constant in your code.
-     *
-     * Only one icon can use the same `guid` at a time, even between processes.
      * 
-     * @param guid
-     *      Persistent identifier for this icon.
-     *      Must be either a 16-byte `Buffer` or a string in the standard UUID/GUID format, matching
-     *      `/^[0-9a-fA-F]{8}-[0-9a-fA-F]{4}-[0-9a-fA-F]{4}-[0-9a-fA-F]{4}-[0-9a-fA-F]{12}$/`,
-     *      e.g. `"01234567-89ab-cdef-0123-456789abcdef"`.
      * @param options
      *      Options controlling the creation, display of the icon, and optionally
      *      the notification ("toast" or "balloon").
      */
-    constructor(guid: string, options?: NotifyIcon.NewOptions);
+    constructor(options?: NotifyIcon.NewOptions);
 
     /**
      * Update the options for a notification icon, and optionally a notification.

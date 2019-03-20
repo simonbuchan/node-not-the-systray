@@ -236,6 +236,12 @@ napi_value export_Menu_showSync(napi_env env, napi_callback_info info) {
       menu,
       GetSystemMetrics(SM_MENUDROPALIGNMENT) | TPM_RETURNCMD | TPM_NONOTIFY,
       mouse_x, mouse_y, env_data->msg_hwnd, nullptr);
+  if (!item_id) {
+    if (auto code = GetLastError(); code) {
+      napi_throw_win32_error(env, "TrackPopupMenuEx", (HRESULT) code);
+      return nullptr;
+    }
+  }
 
   napi_value result;
   NAPI_THROW_RETURN_NULL_IF_NOT_OK(env, napi_create(env, item_id, &result));

@@ -2,24 +2,7 @@
 #include "icon-object.hh"
 #include "parse_guid.hh"
 
-#include <shellapi.h>
-
-using namespace std::string_literals;
-
-template <size_t N>
-char* copy(std::string_view sv, char (&dest)[N]) {
-  return std::copy(std::begin(sv), std::end(sv), dest);
-}
-
-template <size_t N>
-char16_t* copy(std::u16string_view sv, char16_t (&dest)[N]) {
-  return std::copy(std::begin(sv), std::end(sv), dest);
-}
-
-template <size_t N>
-wchar_t* copy(std::wstring_view sv, wchar_t (&dest)[N]) {
-  return std::copy(std::begin(sv), std::end(sv), dest);
-}
+#include "notify-icon.hh"
 
 napi_status napi_get_value(napi_env env, napi_value value, GUID* result) {
   bool is_buffer;
@@ -84,37 +67,27 @@ napi_status napi_get_value(napi_env env, napi_value value,
   }
 }
 
-struct notification_options {
-  // uFlags: NIF_*
-  std::optional<bool> realtime;
-  // dwInfoFlags: NIIF_*
-  std::optional<bool> sound;
-  std::optional<bool> respect_quiet_time;
+// Extends options with ownership values, so the napi_get_value() template
+// machinery works.
+struct notify_icon_object_options : notify_icon_options {
+  struct object_notification_options
+      : notify_icon_options::notification_options {
+    std::optional<IconObject::Ref> icon_ref;
+  };
 
   std::optional<IconObject::Ref> icon_ref;
-  std::optional<std::wstring> title;
-  std::optional<std::wstring> text;
-};
-
-// Represents options common to addIcon() and modifyIcon()
-struct notify_icon_options {
-  // dwState: NIS_*
-  std::optional<bool> hidden;
-  std::optional<bool> large_balloon_icon;
-
-  std::optional<IconObject::Ref> icon_ref;
-  std::optional<std::wstring> tooltip;
-  std::optional<notification_options> notification;
-
+  std::optional<object_notification_options> object_notification;
   std::optional<NapiAsyncCallback> select_callback;
 };
 
-struct notify_icon_add_options : notify_icon_options {
+struct notify_icon_add_options : notify_icon_object_options {
+  std::optional<GUID> guid;
   std::optional<bool> replace;
 };
 
-napi_status napi_get_value(napi_env env, napi_value value,
-                           notification_options* options) {
+napi_status napi_get_value(
+    napi_env env, napi_value value,
+    notify_icon_object_options::object_notification_options* options) {
   napi_valuetype type;
   NAPI_RETURN_IF_NOT_OK(napi_typeof(env, value, &type));
 
@@ -132,6 +105,20 @@ napi_status napi_get_value(napi_env env, napi_value value,
       napi_get_named_property(env, value, "realtime", &options->realtime));
   NAPI_RETURN_IF_NOT_OK(
       napi_get_named_property(env, value, "icon", &options->icon_ref));
+
+  if (options->icon_ref) {
+    auto icon_object = options->icon_ref.value().wrapped;
+    if (!icon_object) {  // Valid, `icon: null`, means that the existing icon is
+                         // being cleared.
+      options->icon.emplace(nullptr);
+    } else {
+      options->icon.emplace(icon_object->icon);
+      // If this condition is false, then Shell_NotifyIcon() will error.
+      options->large_icon = icon_object->width == GetSystemMetrics(SM_CXICON) &&
+                            icon_object->height == GetSystemMetrics(SM_CYICON);
+    }
+  }
+
   NAPI_RETURN_IF_NOT_OK(
       napi_get_named_property(env, value, "title", &options->title));
   NAPI_RETURN_IF_NOT_OK(
@@ -140,22 +127,39 @@ napi_status napi_get_value(napi_env env, napi_value value,
 }
 
 napi_status get_icon_options_common(napi_env env, napi_value value,
-                                    notify_icon_options* options) {
+                                    notify_icon_object_options* options) {
   NAPI_RETURN_IF_NOT_OK(
       napi_get_named_property(env, value, "icon", &options->icon_ref));
+
+  if (options->icon_ref) {
+    auto icon_object = options->icon_ref.value().wrapped;
+    if (!icon_object) {  // Valid, `icon: null`, means that the existing icon is
+                         // being cleared.
+      options->icon.emplace(nullptr);
+    } else {
+      options->icon.emplace(icon_object->icon);
+    }
+  }
+
   NAPI_RETURN_IF_NOT_OK(
       napi_get_named_property(env, value, "tooltip", &options->tooltip));
   NAPI_RETURN_IF_NOT_OK(
       napi_get_named_property(env, value, "hidden", &options->hidden));
   NAPI_RETURN_IF_NOT_OK(napi_get_named_property(env, value, "notification",
-                                                &options->notification));
+                                                &options->object_notification));
+  if (options->object_notification) {
+    // Deliberate slicing. This is a bit clumsy, but it's the simplest solution
+    // that still clearly separates the notify_icon stuff from the N-API
+    // ownership stuff.
+    options->notification = options->notification;
+  }
   NAPI_RETURN_IF_NOT_OK(napi_get_named_property(env, value, "onSelect",
                                                 &options->select_callback));
   return napi_ok;
 }
 
 napi_status napi_get_value(napi_env env, napi_value value,
-                           notify_icon_options* options) {
+                           notify_icon_object_options* options) {
   napi_valuetype type;
   NAPI_RETURN_IF_NOT_OK(napi_typeof(env, value, &type));
 
@@ -181,103 +185,55 @@ napi_status napi_get_value(napi_env env, napi_value value,
   return napi_ok;
 }
 
-void apply_notification(notification_options* options, NOTIFYICONDATAW* nid,
-                        NotifyIconObject* this_object) {
-  nid->uFlags |= NIF_INFO;
-  if (options->realtime.value_or(false)) nid->uFlags |= NIF_REALTIME;
-  if (!options->sound.value_or(true)) nid->dwInfoFlags |= NIIF_NOSOUND;
-  if (options->respect_quiet_time.value_or(true))
-    nid->dwInfoFlags |= NIIF_RESPECT_QUIET_TIME;
+void apply_options(NotifyIconObject* this_object,
+                   notify_icon_object_options& options) {
+  if (options.icon_ref) {
+    this_object->icon_ref = std::move(options.icon_ref.value());
+  }
 
-  if (options->icon_ref) {
-    this_object->notification_icon_ref = std::move(options->icon_ref.value());
-    nid->dwInfoFlags |= NIIF_USER;
-    auto icon_object = this_object->notification_icon_ref.wrapped;
-    nid->hBalloonIcon = icon_object->icon;
-    if (icon_object->width == GetSystemMetrics(SM_CXICON) &&
-        icon_object->height == GetSystemMetrics(SM_CYICON)) {
-      nid->dwInfoFlags |= NIIF_LARGE_ICON;
+  if (options.select_callback) {
+    this_object->select_callback = std::move(options.select_callback.value());
+  }
+
+  if (options.object_notification) {
+    if (options.object_notification->icon_ref) {
+      this_object->notification_icon_ref = std::move(options.icon_ref.value());
+    } else {  // Since the notification is being replaced, we don't need to keep
+              // the old notification icon.
+      this_object->notification_icon_ref.clear();
     }
-  } else {
-    this_object->notification_icon_ref = {};
   }
-
-  copy(options->title.value_or(L""s), nid->szInfoTitle);
-  copy(options->text.value_or(L""s), nid->szInfo);
-}
-
-void apply_options(notify_icon_options* options, NOTIFYICONDATAW* nid,
-                   NotifyIconObject* this_object) {
-  if (options->hidden) {
-    nid->uFlags |= NIF_STATE;
-    nid->dwStateMask |= NIS_HIDDEN;
-    if (options->hidden.value()) nid->dwState |= NIS_HIDDEN;
-  }
-
-  if (options->icon_ref) {
-    nid->uFlags |= NIF_ICON;
-    this_object->icon_ref = std::move(options->icon_ref.value());
-
-    nid->hIcon = this_object->icon_ref.wrapped->icon;
-  }
-
-  if (options->tooltip) {
-    nid->uFlags |= NIF_TIP | NIF_SHOWTIP;
-    copy(options->tooltip.value(), nid->szTip);
-  }
-
-  if (options->select_callback)
-    this_object->select_callback = std::move(options->select_callback.value());
-
-  if (options->notification)
-    apply_notification(&options->notification.value(), nid, this_object);
 }
 
 napi_status NotifyIconObject::init(napi_env env, napi_callback_info info,
                                    napi_value* result) {
+  env_ = env;
   notify_icon_add_options options;
   NAPI_RETURN_IF_NOT_OK(
-      napi_get_cb_info(env, info, result, nullptr, 1, &guid, &options));
+      napi_get_cb_info(env, info, result, nullptr, 0, &options));
 
   static int last_id = 0;
-  id = ++last_id;
+  auto id = ++last_id;
 
   auto env_data = get_env_data(env);
-
-  env_data->add_icon(id, *result, this);
-
-  NOTIFYICONDATAW nid = {sizeof(nid)};
-  nid.uID = id;
-  nid.guidItem = guid;
-  nid.hWnd = env_data->msg_hwnd;
-  nid.uFlags = NIF_GUID | NIF_MESSAGE;
-  nid.uCallbackMessage = WM_TRAYICON_CALLBACK;
-
-  apply_options(&options, &nid, this);
 
   // Shell_NotifyIcon() fails with "Unspecified error" 0x80004005 if it already
   // exists, including from a previous process that has exited without removing
   // it.
-  if (options.replace.value_or(true)) {
+  if (options.guid && options.replace.value_or(true)) {
     // Ignore any errors, as the same error as described above can happen here.
-    Shell_NotifyIcon(NIM_DELETE, &nid);
+    delete_notify_icon({nullptr, 0, options.guid.value()});
   }
 
-  // Shell_NotifyIcon() isn't documented to return errors via GetLastError(),
-  // but it seems like it does... sort of. Just in case, clear it.
-  SetLastError(0);
-
-  if (!Shell_NotifyIcon(NIM_ADD, &nid)) {
+  if (!notify_icon.add({env_data->msg_hwnd, id, options.guid}, options,
+                       WM_TRAYICON_CALLBACK)) {
     napi_throw_win32_error(env, "Shell_NotifyIconW");
     return napi_pending_exception;
   }
 
-  // Receive new-style window messages.
-  nid.uVersion = NOTIFYICON_VERSION_4;
-  if (!Shell_NotifyIcon(NIM_SETVERSION, &nid)) {
-    napi_throw_win32_error(env, "Shell_NotifyIconW");
-    return napi_pending_exception;
-  }
+  env_data->add_icon(id, *result, this);
+
+  apply_options(this, options);
 
   return napi_ok;
 }
@@ -286,50 +242,24 @@ napi_value export_NotifyIcon_id(napi_env env, napi_callback_info info) {
   NotifyIconObject* this_object;
   NAPI_RETURN_NULL_IF_NOT_OK(napi_get_this_arg(env, info, &this_object));
   napi_value result;
-  NAPI_THROW_RETURN_NULL_IF_NOT_OK(env,
-                                   napi_create(env, this_object->id, &result));
+  NAPI_THROW_RETURN_NULL_IF_NOT_OK(
+      env, napi_create(env, this_object->notify_icon.id.callback_id, &result));
   return result;
 }
 
 napi_value export_NotifyIcon_update(napi_env env, napi_callback_info info) {
   NotifyIconObject* this_object;
-  notify_icon_options options;
+  notify_icon_object_options options;
   NAPI_RETURN_NULL_IF_NOT_OK(
       napi_get_cb_info(env, info, &this_object, nullptr, 1, &options));
 
-  NOTIFYICONDATAW nid = {sizeof(nid)};
-  nid.guidItem = this_object->guid;
-  nid.uFlags = NIF_GUID;
-
-  apply_options(&options, &nid, this_object);
-
-  // Shell_NotifyIcon() isn't documented to return errors via GetLastError(),
-  // but it seems like it sometimes returns something valid. Clear it here
-  // just so we don't have a chance of returning an invalid error message.
-  SetLastError(0);
-
-  if (!Shell_NotifyIcon(NIM_MODIFY, &nid)) {
+  if (!this_object->notify_icon.modify(options)) {
     napi_throw_win32_error(env, "Shell_NotifyIconW");
     return nullptr;
   }
+  apply_options(this_object, options);
+
   return nullptr;
-}
-
-napi_status NotifyIconObject::remove(napi_env env) {
-  auto env_data = get_env_data(env);
-
-  NOTIFYICONDATAW nid = {sizeof(nid)};
-  nid.guidItem = guid;
-  nid.uFlags = NIF_GUID;
-
-  if (!Shell_NotifyIcon(NIM_DELETE, &nid)) {
-    napi_throw_win32_error(env, "Shell_NotifyIconW");
-    return napi_pending_exception;
-  }
-
-  env_data->remove_icon(id);
-
-  return napi_ok;
 }
 
 napi_value export_NotifyIcon_remove(napi_env env, napi_callback_info info) {
@@ -354,6 +284,10 @@ napi_status NotifyIconObject::define_class(EnvData* env_data,
 napi_status NotifyIconObject::select(napi_env env, napi_value this_value,
                                      bool right_button, int16_t mouse_x,
                                      int16_t mouse_y) {
+  if (!select_callback) {
+    return napi_ok;
+  }
+
   napi_value event;
   NAPI_RETURN_IF_NOT_OK(napi_create_object(env, &event,
                                            {
@@ -366,6 +300,25 @@ napi_status NotifyIconObject::select(napi_env env, napi_value this_value,
   if (select_callback(this_value, {event}) == nullptr) {
     return napi_generic_failure;
   }
+
+  return napi_ok;
+}
+
+napi_status NotifyIconObject::remove(napi_env env) {
+  if (!notify_icon.id) {
+    return napi_ok;
+  }
+
+  auto env_data = get_env_data(env);
+
+  auto id = notify_icon.id.callback_id;
+
+  if (!notify_icon.clear()) {
+    napi_throw_win32_error(env, "Shell_NotifyIconW");
+    return napi_pending_exception;
+  }
+
+  env_data->remove_icon(id);
 
   return napi_ok;
 }

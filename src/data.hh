@@ -21,7 +21,8 @@ struct NotifyIconObject;
 struct EnvData {
   struct IconData {
     napi_ref ref;
-    NotifyIconObject* object;
+    int32_t id;
+    std::optional<GUID> guid;
   };
 
   // Note that there's not much point trying to clean up these on
@@ -35,7 +36,7 @@ struct EnvData {
   uv_idle_t message_pump_idle = {this};
 
   napi_status add_icon(int32_t id, napi_value value, NotifyIconObject* object);
-  void remove_icon(int32_t id);
+  bool remove_icon(int32_t id);
 
   ~EnvData();
 };
