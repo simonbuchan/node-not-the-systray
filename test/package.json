@@ -1,0 +1,16 @@
+{
+    "name": "napi-notify-icon-test",
+    "private": true,
+    "scripts": {
+        "start": "ts-node index.ts",
+        "typecheck": "tsc --noEmit"
+    },
+    "dependencies": {
+        "not-the-systray": "link:.."
+    },
+    "devDependencies": {
+        "@types/node": "^8.0.0",
+        "typescript": "~3.3.3333",
+        "ts-node": "^8.0.3"
+    }
+}

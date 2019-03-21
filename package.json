@@ -1,22 +1,43 @@
 {
-    "name": "@simonbuchan/tray",
-    "private": true,
-    "gypfile": false,
+    "name": "not-the-systray",
+    "version": "0.1.0",
+    "license": "MIT",
+    "homepage": "https://github.com/simonbuchan/node-not-the-systray",
+    "repository": {
+        "type": "git",
+        "url": "https://github.com/simonbuchan/node-not-the-systray.git"
+    },
+    "keywords": [
+        "windows",
+        "icon",
+        "notify",
+        "notification",
+        "systray",
+        "system tray",
+        "tray",
+        "napi"
+    ],
+    "main": "index.js",
+    "types": "index.d.ts",
     "files": [
         "index.js",
-        "inded.d.ts",
-        "build/Release/tray.node"
+        "index.d.ts",
+        "build/Release/notify_icon.node"
     ],
     "scripts": {
-        "install": "echo using pre-built",
-        "rebuild": "node-gyp rebuild",
-        "build": "node-gyp build --silent",
-        "test": "ts-node -P test/tsconfig.json test/index.ts"
+        "prepublishOnly": "node-gyp rebuild --release",
+        "install": "echo Using prebuilt binary",
+        "clean": "node-gyp clean --silent",
+        "rebuild": "node-gyp rebuild --silent",
+        "build": "node-gyp build --silent"
+    },
+    "dependencies": {
+        "@types/node": ">= 8.0.0"
     },
     "devDependencies": {
-        "@types/node": "^8.0.0",
-        "node-gyp": "^3.8.0",
-        "typescript": "~3.3.3333",
-        "ts-node": "^8.0.3"
-    }
+        "node-gyp": "^3.8.0"
+    },
+    "os": [
+        "win32"
+    ]
 }

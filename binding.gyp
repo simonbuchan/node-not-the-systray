@@ -1,7 +1,7 @@
 {
     "targets": [
         {
-            "target_name": "tray",
+            "target_name": "notify_icon",
             "include_dirs": [
                 "src"
             ],
@@ -14,6 +14,7 @@
                 "src/menu-object.cc",
                 "src/notify-icon.cc",
                 "src/notify-icon-object.cc",
+                "src/reg-icon-stream.cc",
                 "src/parse_guid.cc",
                 "src/module.cc"
             ],

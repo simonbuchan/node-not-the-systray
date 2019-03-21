@@ -1,4 +1,4 @@
-import { NotifyIcon, Icon, Menu } from "../";
+import { NotifyIcon, Icon, Menu } from "not-the-systray";
 
 class TestError extends Error {
     name = 'TestError';
