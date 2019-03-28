@@ -1,9 +1,4 @@
-let native;
-try {
-    native = require('./build/Release/notify_icon.node');
-} catch (e) {
-    native = require('./build/Debug/notify_icon.node');
-}
+const native = require('./notify_icon.node');
 
 const { NotifyIcon, Icon, Menu } = native;
 

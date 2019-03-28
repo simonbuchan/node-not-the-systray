@@ -1,6 +1,6 @@
 {
     "name": "not-the-systray",
-    "version": "0.2.0",
+    "version": "0.2.1",
     "license": "MIT",
     "homepage": "https://github.com/simonbuchan/node-not-the-systray",
     "repository": {
@@ -22,14 +22,15 @@
     "files": [
         "index.js",
         "index.d.ts",
-        "build/Release/notify_icon.node"
+        "notify_icon.node"
     ],
     "scripts": {
-        "prepublishOnly": "node-gyp rebuild --release",
+        "prepublishOnly": "node build rebuild",
+        "prepack": "node build rebuild",
         "install": "echo Using prebuilt binary",
-        "clean": "node-gyp clean --silent",
-        "rebuild": "node-gyp rebuild --silent",
-        "build": "node-gyp build --silent"
+        "clean": "node build clean",
+        "rebuild": "node build rebuild",
+        "build": "node build build"
     },
     "dependencies": {
         "@types/node": ">= 8.0.0"
