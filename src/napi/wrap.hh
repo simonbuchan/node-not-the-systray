@@ -52,58 +52,41 @@ struct NapiWrapped {
     delete (TypeWrapper*)finalize_data;
   }
 
-  struct NewResult {
-    napi_status status;
-    napi_value wrapper;
-    T* wrapped;
-  };
-
-  static NewResult new_instance(napi_env env, napi_ref constructor_ref,
-                                std::initializer_list<napi_value> args = {}) {
+  static napi_status new_instance(napi_env env, napi_ref constructor_ref,
+                                  napi_value* result,
+                                  std::initializer_list<napi_value> args = {}) {
     napi_value constructor = nullptr;
-    NAPI_RETURN_INIT_IF_NOT_OK(
+    NAPI_RETURN_IF_NOT_OK(
         napi_get_reference_value(env, constructor_ref, &constructor));
-    return new_instance(env, constructor, args);
+    return napi_new_instance(env, constructor, args.size(), args.begin(),
+                             result);
   }
 
-  static NewResult new_instance(napi_env env, napi_value constructor,
-                                std::initializer_list<napi_value> args) {
-    napi_value wrapper;
-    NAPI_RETURN_INIT_IF_NOT_OK(napi_new_instance(env, constructor, args.size(),
-                                                 args.begin(), &wrapper));
-
-    auto [status, wrapped] = try_unwrap(env, wrapper);
-    return {status, wrapper, wrapped};
+  static napi_status new_instance(napi_env env, napi_value constructor,
+                                  napi_value* result,
+                                  std::initializer_list<napi_value> args = {}) {
+    return napi_new_instance(env, constructor, args.size(), args.begin(),
+                             result);
   }
 
-  struct UnwrapResult {
-    napi_status status;
-    T* wrapped;
-  };
-
-  static UnwrapResult try_unwrap(napi_env env, napi_value value) {
-    void* void_wrapped = nullptr;
-    NAPI_RETURN_INIT_IF_NOT_OK(napi_unwrap(env, value, &void_wrapped));
-    auto type_wrapped = (TypeWrapper*)void_wrapped;
-    if (type_wrapped->type_ptr != &type_object) {
-      return {napi_ok};
-    }
-
-    return {napi_ok, &type_wrapped->value};
+  static napi_status try_unwrap(napi_env env, napi_value value, T** result) {
+    void* raw = nullptr;
+    NAPI_RETURN_IF_NOT_OK(napi_unwrap(env, value, &raw));
+    auto typed = static_cast<TypeWrapper*>(raw);
+    *result = typed->type_ptr != &type_object ? nullptr : &typed->value;
+    return napi_ok;
   }
 
   using Ref = NapiUnwrappedRef<T>;
 
   static napi_status try_create_ref(napi_env env, napi_value value,
                                     Ref* result) {
-    if (auto [status, wrapped] = try_unwrap(env, value); !wrapped) {
-      result->wrapped = nullptr;
+    if (auto status = try_unwrap(env, value, &result->wrapped);
+        !result->wrapped) {
       return status;
-    } else {
-      NAPI_RETURN_IF_NOT_OK(result->create(env, value));
-      result->wrapped = wrapped;
-      return napi_ok;
     }
+    NAPI_RETURN_IF_NOT_OK(result->create(env, value));
+    return napi_ok;
   }
 
  protected:
@@ -151,17 +134,15 @@ constexpr bool is_complete_base_of_v = std::is_base_of_v<Base, Derived>;
 template <typename T, typename = std::enable_if_t<
                           detail::is_complete_base_of_v<NapiWrapped<T>, T>>>
 napi_status napi_get_value(napi_env env, napi_value value, T** result) {
-  auto unwrap = NapiWrapped<T>::try_unwrap(env, value);
-  if (unwrap.status != napi_ok) {
+  auto status = NapiWrapped<T>::try_unwrap(env, value, result);
+  if (status != napi_ok) {
     return napi_throw_last_error(env);
   }
 
-  if (!unwrap.wrapped) {
+  if (!*result) {
     napi_throw_type_error(env, nullptr, "Invalid native object type");
     return napi_pending_exception;
   }
-
-  *result = unwrap.wrapped;
 
   return napi_ok;
 }

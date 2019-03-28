@@ -191,14 +191,10 @@ static napi_value wrap_menu(napi_env env, MenuHandle menu) {
 
   auto env_data = get_env_data(env);
 
-  if (auto [status, wrapper, wrapped] =
-          MenuObject::new_instance(env_data, std::move(menu));
-      status != napi_ok) {
-    napi_throw_last_error(env);
-    return nullptr;
-  } else {
-    return wrapper;
-  }
+  napi_value result;
+  NAPI_THROW_RETURN_NULL_IF_NOT_OK(
+      env, MenuObject::new_instance(env_data, std::move(menu), &result));
+  return result;
 }
 
 napi_value export_Menu_create(napi_env env, napi_callback_info info) {
@@ -238,7 +234,7 @@ napi_value export_Menu_showSync(napi_env env, napi_callback_info info) {
       mouse_x, mouse_y, env_data->msg_hwnd, nullptr);
   if (!item_id) {
     if (auto code = GetLastError(); code) {
-      napi_throw_win32_error(env, "TrackPopupMenuEx", (HRESULT) code);
+      napi_throw_win32_error(env, "TrackPopupMenuEx", (HRESULT)code);
       return nullptr;
     }
   }
@@ -370,13 +366,15 @@ auto MenuObject::define_class(EnvData* env_data, napi_value* constructor_value)
       });
 }
 
-auto MenuObject::new_instance(EnvData* env_data, MenuHandle menu) -> NewResult {
-  auto result =
-      NapiWrapped::new_instance(env_data->env, env_data->menu_constructor);
-  if (result.wrapped) {
-    result.wrapped->menu = std::move(menu);
-  }
-  return result;
+napi_status MenuObject::new_instance(EnvData* env_data, MenuHandle menu,
+                                     napi_value* result) {
+  NAPI_RETURN_IF_NOT_OK(NapiWrapped::new_instance(
+      env_data->env, env_data->menu_constructor, result));
+  MenuObject* wrapped = nullptr;
+  NAPI_RETURN_IF_NOT_OK(
+      NapiWrapped::try_unwrap(env_data->env, *result, &wrapped));
+  wrapped->menu = std::move(menu);
+  return napi_ok;
 }
 
 napi_status MenuObject::init(napi_env env, napi_callback_info info,

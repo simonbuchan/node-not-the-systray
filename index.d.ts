@@ -26,6 +26,7 @@ export namespace Icon {
 
     export function load(pathOrId: string | BuiltinId, size: Readonly<Size>): Icon;
 
+    export function loadResource(size: Readonly<Size>, id?: number, path?: string): Icon;
     /** Native API to load a built-in icon at a specific size. */
     export function loadBuiltin(id: BuiltinId, size: Readonly<Size>): Icon;
     export function loadFile(path: string, size: Readonly<Size>): Icon;

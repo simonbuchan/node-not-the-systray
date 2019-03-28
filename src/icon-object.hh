@@ -17,7 +17,4 @@ struct IconObject : NapiWrapped<IconObject> {
 
   static napi_status define_class(EnvData* env_data,
                                   napi_value* constructor_value);
-
-  static napi_status load(EnvData* env_data, LPCWSTR path, icon_size_t size,
-                          DWORD flags, napi_value* result);
 };

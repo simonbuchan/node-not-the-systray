@@ -12,7 +12,8 @@ catchErrors(() => {
     const guid = "ded73175-c489-4f7e-acdc-3dbdde784468";
     const guid2 = "ded73175-c489-4f7e-acdc-3dbdde784469";
 
-    const icon = Icon.load(`${__dirname}/stop.ico`, Icon.small);
+    // const icon = Icon.load(`${__dirname}/stop.ico`, Icon.small);
+    const icon = Icon.loadResource(Icon.small, undefined, "cmd.exe");
     const altIcon = Icon.load(Icon.ids.warning, Icon.small);
     const notificationIcon = Icon.load(`${__dirname}/lightbulb.ico`, Icon.large);
 

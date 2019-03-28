@@ -11,7 +11,8 @@ struct MenuObject : NapiWrapped<MenuObject> {
 
   static napi_status define_class(EnvData* env_data,
                                   napi_value* constructor_value);
-  static NewResult new_instance(EnvData* env_data, MenuHandle menu);
+  static napi_status new_instance(EnvData* env_data, MenuHandle menu,
+                                  napi_value* result);
 
  protected:
   friend NapiWrapped;
