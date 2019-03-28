@@ -25,7 +25,6 @@
         "notify_icon.node"
     ],
     "scripts": {
-        "prepublishOnly": "node build rebuild",
         "prepack": "node build rebuild",
         "install": "echo Using prebuilt binary",
         "clean": "node build clean",
