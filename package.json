@@ -1,6 +1,6 @@
 {
     "name": "not-the-systray",
-    "version": "0.2.1",
+    "version": "0.2.2",
     "license": "MIT",
     "homepage": "https://github.com/simonbuchan/node-not-the-systray",
     "repository": {
