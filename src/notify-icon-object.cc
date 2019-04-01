@@ -151,7 +151,7 @@ napi_status get_icon_options_common(napi_env env, napi_value value,
     // Deliberate slicing. This is a bit clumsy, but it's the simplest solution
     // that still clearly separates the notify_icon stuff from the N-API
     // ownership stuff.
-    options->notification = options->notification;
+    options->notification = options->object_notification;
   }
   NAPI_RETURN_IF_NOT_OK(napi_get_named_property(env, value, "onSelect",
                                                 &options->select_callback));
@@ -197,7 +197,7 @@ void apply_options(NotifyIconObject* this_object,
 
   if (options.object_notification) {
     if (options.object_notification->icon_ref) {
-      this_object->notification_icon_ref = std::move(options.icon_ref.value());
+      this_object->notification_icon_ref = std::move(options.object_notification->icon_ref.value());
     } else {  // Since the notification is being replaced, we don't need to keep
               // the old notification icon.
       this_object->notification_icon_ref.clear();

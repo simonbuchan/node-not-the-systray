@@ -45,6 +45,36 @@ napi_value export_Icon_loadBuiltin(napi_env env, napi_callback_info info) {
   return result;
 }
 
+struct ResourceId {
+  LPWSTR id;
+  std::wstring storage;
+
+  ResourceId& operator=(uint32_t new_id) {
+    if (IS_INTRESOURCE(new_id)) {
+      id = MAKEINTRESOURCE(new_id);
+      storage.clear();
+    } else {
+      storage.assign(MAKEINTRESOURCE(new_id));
+      id = storage.data();
+    }
+    return *this;
+  }
+
+  ResourceId& operator=(LPWSTR new_id) {
+    if (IS_INTRESOURCE(new_id)) {
+      id = new_id;
+    } else {
+      storage.assign(new_id);
+      id = storage.data();
+    }
+    return *this;
+  }
+
+  operator LPWSTR() const {
+    return id;
+  }
+};
+
 napi_value export_Icon_loadResource(napi_env env, napi_callback_info info) {
   icon_size_t size;
   std::optional<uint32_t> id;
@@ -65,15 +95,15 @@ napi_value export_Icon_loadResource(napi_env env, napi_callback_info info) {
     }
   }
 
-  LPWSTR resource;
+  ResourceId resource;
   if (id) {
-    resource = MAKEINTRESOURCEW(id.value());
+    resource = id.value();
   } else {
     // Use first RT_GROUP_ICON, the same as Windows uses for an .exe icon.
     EnumResourceNamesW(
         hinstance, RT_GROUP_ICON,
         [](HMODULE hModule, LPCWSTR lpType, LPWSTR lpName, LONG_PTR lParam) {
-          *reinterpret_cast<LPWSTR*>(lParam) = lpName;
+          *reinterpret_cast<ResourceId*>(lParam) = lpName;
           return FALSE;
         },
         reinterpret_cast<LONG_PTR>(&resource));

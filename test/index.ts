@@ -24,7 +24,7 @@ catchErrors(() => {
         { separator: true },
         { id: 103, text: "Time", disabled: true },
         { id: 124, text: "Counter" },
-        { text: "Notification" },
+        { id: 125, text: "Notification" },
         {
             text: "Submenu", items: [
                 { id: 456, text: "Use warning" },
@@ -89,6 +89,16 @@ catchErrors(() => {
                     text: `Counter: ${++count}`,
                 });
                 return;
+            case 125:
+                notifyIcon.update({
+                    notification: {
+                        icon: notificationIcon,
+                        sound: false,
+                        title: "Some notification",
+                        text: `You selected: "${item.text}"\nThe time is: ${new Date().toLocaleTimeString()}`
+                    },
+                });
+                return;
             case 456:
                 const useWarning = !item.checked;
                 contextMenu.update(itemId, {
@@ -99,19 +109,10 @@ catchErrors(() => {
                 });
                 return;
         }
-
-        notifyIcon.update({
-            notification: {
-                icon: notificationIcon,
-                sound: false,
-                title: "Annoying Message",
-                text: `You selected: "${item.text}"\nThe time is: ${new Date().toLocaleTimeString()}`
-            },
-        });
     });
 
     const notifyIcon = new NotifyIcon({
-        guid,
+        // guid,
         icon,
         tooltip: "Example Tooltip Text",
 
