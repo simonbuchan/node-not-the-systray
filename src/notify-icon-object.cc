@@ -126,20 +126,27 @@ napi_status napi_get_value(
   return napi_ok;
 }
 
+void set_optional_hicon_from_ref(
+    std::optional<HICON>& hicon,
+    std::optional<NapiUnwrappedRef<IconObject>> const& ref) {
+  // Not provided, means don't change existing value: !hicon
+  if (!ref) return;
+
+  auto icon_object = ref.value().wrapped;
+  if (!icon_object) {
+    // `icon: null`, means clear existing value: hicon && !hicon.value()
+    hicon.emplace(nullptr);
+  } else {
+    hicon.emplace(icon_object->icon);
+  }
+}
+
 napi_status get_icon_options_common(napi_env env, napi_value value,
                                     notify_icon_object_options* options) {
   NAPI_RETURN_IF_NOT_OK(
       napi_get_named_property(env, value, "icon", &options->icon_ref));
 
-  if (options->icon_ref) {
-    auto icon_object = options->icon_ref.value().wrapped;
-    if (!icon_object) {  // Valid, `icon: null`, means that the existing icon is
-                         // being cleared.
-      options->icon.emplace(nullptr);
-    } else {
-      options->icon.emplace(icon_object->icon);
-    }
-  }
+  set_optional_hicon_from_ref(options->icon, options->icon_ref);
 
   NAPI_RETURN_IF_NOT_OK(
       napi_get_named_property(env, value, "tooltip", &options->tooltip));
@@ -148,6 +155,8 @@ napi_status get_icon_options_common(napi_env env, napi_value value,
   NAPI_RETURN_IF_NOT_OK(napi_get_named_property(env, value, "notification",
                                                 &options->object_notification));
   if (options->object_notification) {
+    set_optional_hicon_from_ref(options->object_notification->icon,
+                                options->object_notification->icon_ref);
     // Deliberate slicing. This is a bit clumsy, but it's the simplest solution
     // that still clearly separates the notify_icon stuff from the N-API
     // ownership stuff.
@@ -197,7 +206,8 @@ void apply_options(NotifyIconObject* this_object,
 
   if (options.object_notification) {
     if (options.object_notification->icon_ref) {
-      this_object->notification_icon_ref = std::move(options.object_notification->icon_ref.value());
+      this_object->notification_icon_ref =
+          std::move(options.object_notification->icon_ref.value());
     } else {  // Since the notification is being replaced, we don't need to keep
               // the old notification icon.
       this_object->notification_icon_ref.clear();
