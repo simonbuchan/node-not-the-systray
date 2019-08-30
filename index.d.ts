@@ -195,7 +195,7 @@ export namespace NotifyIcon {
      * Properties of the icon selection.
      */
     export interface SelectEvent {
-        icon: NotifyIcon;
+        target: NotifyIcon;
         rightButton: boolean;
         mouseX: number;
         mouseY: number;
