@@ -66,10 +66,10 @@ async function main() {
     //     tooltip: "Will get garbage collected",
     // });
 
-    const onSelect = catchErrors(function (this: NotifyIcon, event: NotifyIcon.SelectEvent) {
+    const onSelect = catchErrorsAsync(async function (this: NotifyIcon, event: NotifyIcon.SelectEvent) {
         console.log("tray icon selected %O %O", this, event);
 
-        const itemId = contextMenu.showSync(event.mouseX, event.mouseY);
+        const itemId = await contextMenu.show(event.mouseX, event.mouseY);
         console.log("menu item selected %O", itemId);
         if (!itemId) {
             return;
@@ -82,7 +82,7 @@ async function main() {
                 process.exit(0);
                 return;
             case 2:
-                throw new TestError("Should bubble out to uncaughtException listener.");
+                throw new TestError("Should bubble out to unhandledRejection listener.");
             case 3:
                 new NotifyIcon({
                     icon: Icon.load(Icon.ids.info, Icon.small),

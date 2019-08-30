@@ -77,6 +77,19 @@ export class Menu {
     constructor(items: ReadonlyArray<Menu.ItemInput>);
 
     /**
+     * Open the menu and return a promise resolved when a selection is made by the user.
+     * Should be called in response to `NotifyIcon#onSelect()`, which
+     * will give the `mouseX`, `mouseY` values to use for the arguments.
+     * If called at other times, you will likely not have a foreground
+     * window, which will cause the menu to misbehave, not correctly closing
+     * on the first selection.
+     * @param x Desktop x coordinate to open menu near.
+     * @param y Desktop y coordinate to open menu near.
+     * @returns Item id if selected or `null` if the menu was dismissed.
+     */
+    show(x: number, y: number): Promise<number | null>;
+
+    /**
      * Open the menu and block until a selection is made by the user.
      * Should be called in response to `NotifyIcon#onSelect()`, which
      * will give the `mouseX`, `mouseY` values to use for the arguments.

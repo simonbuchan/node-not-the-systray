@@ -217,6 +217,64 @@ napi_value export_Menu_createFromTemplate(napi_env env,
   return wrap_menu(env, load_menu_indirect(env, data));
 }
 
+napi_value export_Menu_show(napi_env env, napi_callback_info info) {
+  MenuObject* this_object;
+  int32_t mouse_x;
+  int32_t mouse_y;
+  NAPI_RETURN_NULL_IF_NOT_OK(napi_get_cb_info(env, info, &this_object, nullptr,
+                                              2, &mouse_x, &mouse_y));
+
+  auto env_data = get_env_data(env);
+  if (!env_data) {
+    return nullptr;
+  }
+
+  HMENU menu = this_object->menu;
+
+  napi_deferred deferred;
+  napi_value promise;
+  NAPI_THROW_RETURN_NULL_IF_NOT_OK(
+      env, napi_create_promise(env, &deferred, &promise));
+
+  env_data->icon_message_loop.run_on_msg_thread_nonblocking([=] {
+    auto env_data = get_env_data(env);
+    if (!env_data) {
+      return;
+    }
+
+    int32_t item_id = 0;
+    DWORD error = 0;
+    item_id = (int32_t)TrackPopupMenuEx(
+        menu,
+        GetSystemMetrics(SM_MENUDROPALIGNMENT) | TPM_RETURNCMD | TPM_NONOTIFY,
+        mouse_x, mouse_y, env_data->icon_message_loop.hwnd, nullptr);
+    if (!item_id) {
+      error = GetLastError();
+    }
+
+    env_data->icon_message_loop.run_on_env_thread.blocking(
+        [=](napi_env env, napi_value) {
+          if (error) {
+            napi_value error_value;
+            NAPI_THROW_RETURN_VOID_IF_NOT_OK(
+                env, napi_create_win32_error(env, "TrackPopupMenuEx", error,
+                                             &error_value));
+            NAPI_THROW_RETURN_VOID_IF_NOT_OK(
+                env, napi_reject_deferred(env, deferred, error_value));
+          } else {
+            napi_value result;
+            NAPI_THROW_RETURN_VOID_IF_NOT_OK(
+                env, item_id ? napi_create(env, item_id, &result)
+                             : napi_get_null(env, &result));
+            NAPI_THROW_RETURN_VOID_IF_NOT_OK(
+                env, napi_resolve_deferred(env, deferred, result));
+          }
+        });
+  });
+
+  return promise;
+}
+
 napi_value export_Menu_showSync(napi_env env, napi_callback_info info) {
   MenuObject* this_object;
   int32_t mouse_x;
@@ -228,7 +286,7 @@ napi_value export_Menu_showSync(napi_env env, napi_callback_info info) {
 
   HMENU menu = this_object->menu;
 
-  int item_id = 0;
+  int32_t item_id = 0;
   DWORD error = 0;
 
   env_data->icon_message_loop.run_on_msg_thread_blocking([=, &item_id, &error] {
@@ -246,7 +304,9 @@ napi_value export_Menu_showSync(napi_env env, napi_callback_info info) {
     return nullptr;
   }
   napi_value result;
-  NAPI_THROW_RETURN_NULL_IF_NOT_OK(env, napi_create(env, item_id, &result));
+  NAPI_THROW_RETURN_NULL_IF_NOT_OK(env, item_id
+                                            ? napi_create(env, item_id, &result)
+                                            : napi_get_null(env, &result));
   return result;
 }
 
@@ -364,6 +424,7 @@ auto MenuObject::define_class(EnvData* env_data, napi_value* constructor_value)
   return NapiWrapped::define_class(
       env_data->env, "Menu", constructor_value, &env_data->menu_constructor,
       {
+          napi_method_property("show", export_Menu_show),
           napi_method_property("showSync", export_Menu_showSync),
           napi_method_property("getAt", export_Menu_getAt),
           napi_method_property("get", export_Menu_get),
