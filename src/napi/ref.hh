@@ -33,6 +33,10 @@ struct NapiRef {
   explicit operator bool() const { return ref != nullptr; }
 
   void clear() { assign_move(nullptr, nullptr); }
+  void release() {
+    env = nullptr;
+    ref = nullptr;
+  }
 
   void assign_move(napi_env new_env, napi_ref new_ref) {
     auto old_env = std::exchange(env, new_env);

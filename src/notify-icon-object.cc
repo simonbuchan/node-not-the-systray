@@ -235,13 +235,13 @@ napi_status NotifyIconObject::init(napi_env env, napi_callback_info info,
     delete_notify_icon({nullptr, 0, options.guid.value()});
   }
 
-  if (!notify_icon.add({env_data->msg_hwnd, id, options.guid}, options,
-                       WM_TRAYICON_CALLBACK)) {
+  NAPI_RETURN_IF_NOT_OK(env_data->add_icon(id, *result, this));
+
+  if (!notify_icon.add({env_data->icon_message_loop.hwnd, id, options.guid},
+                       options, env_data->icon_message_loop.notify_message())) {
     napi_throw_win32_error(env, "Shell_NotifyIconW");
     return napi_pending_exception;
   }
-
-  env_data->add_icon(id, *result, this);
 
   apply_options(this, options);
 
@@ -289,29 +289,6 @@ napi_status NotifyIconObject::define_class(EnvData* env_data,
           napi_method_property("update", export_NotifyIcon_update),
           napi_method_property("remove", export_NotifyIcon_remove),
       });
-}
-
-napi_status NotifyIconObject::select(napi_env env, napi_value this_value,
-                                     bool right_button, int16_t mouse_x,
-                                     int16_t mouse_y) {
-  if (!select_callback) {
-    return napi_ok;
-  }
-
-  napi_value event;
-  NAPI_RETURN_IF_NOT_OK(napi_create_object(env, &event,
-                                           {
-                                               {"target", this_value},
-                                               {"rightButton", right_button},
-                                               {"mouseX", mouse_x},
-                                               {"mouseY", mouse_y},
-                                           }));
-
-  if (select_callback(this_value, {event}) == nullptr) {
-    return napi_generic_failure;
-  }
-
-  return napi_ok;
 }
 
 napi_status NotifyIconObject::remove(napi_env env) {

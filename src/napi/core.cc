@@ -25,12 +25,12 @@ napi_value napi_get_and_clear_last_error(napi_env env) {
     return result;
   }
 
-  if (!status) {
-    NAPI_FATAL("No error info");
-  }
-  if (!message_value) {
-    NAPI_FATAL("No error message");
-  }
+  // if (!status) {
+  //   NAPI_FATAL("No error info");
+  // }
+  // if (!message_value) {
+  //   NAPI_FATAL("No error message");
+  // }
 
   switch (status) {
     case napi_ok:

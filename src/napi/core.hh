@@ -76,6 +76,8 @@ using namespace std::string_view_literals;
 #define NAPI_FATAL(msg) \
   napi_fatal_error(__FUNCTION__, NAPI_AUTO_LENGTH, msg, NAPI_AUTO_LENGTH)
 
+napi_value napi_get_and_clear_last_error(napi_env env);
+
 napi_status napi_throw_last_error(napi_env env);
 
 napi_status napi_rethrow_with_location(napi_env env, std::string_view location);

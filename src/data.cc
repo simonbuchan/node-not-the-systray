@@ -3,19 +3,12 @@
 
 #include <map>
 #include <mutex>
+#include <optional>
 
-#include <shellapi.h>
-
-// Hack to get the DLL instance without a DllMain()
-EXTERN_C IMAGE_DOS_HEADER __ImageBase;
-HINSTANCE get_image_instance() {
-  return reinterpret_cast<HINSTANCE>(&__ImageBase);
-}
-
-// If you have multiple environments in one process,
-// then you have multiple threads.
 static std::mutex env_datas_mutex;
-// Must be map<> for the invalidation guarantees
+// Must be map<>, not unordered_map<>, for the
+// guarantee that insert and delete do not invalidate
+// other elements.
 static std::map<napi_env, EnvData> env_datas;
 
 EnvData* get_env_data(napi_env env) {
@@ -27,113 +20,89 @@ EnvData* get_env_data(napi_env env) {
   return nullptr;
 }
 
-static void message_pump_idle_cb(uv_idle_t* idle) {
-  auto data = (EnvData*)idle->data;
-
-  // Poll for messages without blocking either the node event loop for too long
-  // (10ms) or burning an entire CPU. Would be nicer to use a GetMessage() loop
-  // on another thread, but it seems a bit over complicated since this mostly
-  // works fine (0% CPU on my machine). Be aware this does still prevent the CPU
-  // from getting to sleep mode, so it's not perfect.
-  // https://stackoverflow.com/a/10866466/20135
-  if (MsgWaitForMultipleObjects(0, nullptr, false, 10, QS_ALLINPUT) ==
-      WAIT_OBJECT_0) {
-    MSG msg = {};
-    while (PeekMessage(&msg, data->msg_hwnd, 0, 0, PM_REMOVE)) {
-      TranslateMessage(&msg);
-      DispatchMessage(&msg);
-    }
-  }
-}
-
 napi_status EnvData::add_icon(int32_t id, napi_value value,
                               NotifyIconObject* object) {
+  // std::lock_guard icons_lock{icons_mutex};
+
   if (icons.empty()) {
-    uv_idle_start(&message_pump_idle, &message_pump_idle_cb);
+    NAPI_RETURN_IF_NOT_OK(icon_message_loop.init(this));
   }
-  napi_ref ref;
-  NAPI_RETURN_IF_NOT_OK(napi_create_reference(env, value, 1, &ref));
-  if (icons
-          .insert({id,
-                   {ref, object->notify_icon.id.callback_id,
-                    object->notify_icon.id.guid}})
-          .second == false) {
-    NAPI_RETURN_IF_NOT_OK(napi_delete_reference(env, ref));
+
+  NapiRef ref;
+  NAPI_RETURN_IF_NOT_OK(ref.create(env, value));
+  auto insert = icons.insert({id,
+                              {ref.ref, object->notify_icon.id.callback_id,
+                               object->notify_icon.id.guid}});
+  // If the insert succeeded, don't unref
+  if (insert.second) {
+    ref.release();
   }
+
   return napi_ok;
 }
+
+using UserCallParam = std::function<LRESULT(HWND, WPARAM)>;
 
 bool EnvData::remove_icon(int32_t id) {
-  if (auto it = icons.find(id); it == icons.end()) {
-    return false;
-  } else {
-    icons.erase(it);
-    if (icons.empty()) {
-      uv_idle_stop(&message_pump_idle);
+  {
+    // std::lock_guard icons_lock{icons_mutex};
+    if (auto it = icons.find(id); it == icons.end()) {
+      return false;
+    } else {
+      icons.erase(it);
+      if (icons.empty()) {
+        icon_message_loop.quit();
+        // ::PostMessageW(msg_hwnd, WM_USER_QUIT, 0, 0);
+      }
     }
-    return true;
   }
+  // msg_thread.join();
+  return true;
 }
 
-static napi_status notify_select(EnvData* env_data, int32_t icon_id,
-                                 bool right_button, int32_t mouse_x,
-                                 int32_t mouse_y) {
-  if (auto it = env_data->icons.find(icon_id); it != env_data->icons.end()) {
-    auto env = env_data->env;
+void EnvData::notify_select(int32_t icon_id, NotifySelectArgs args) {
+  icon_message_loop.run_on_env_thread.blocking([=](napi_env env, napi_value) {
+    NAPI_FATAL_IF(this->env != env);
+
+    napi_ref ref;
+    {
+      // std::lock_guard icons_lock{env_data->icons_mutex};
+      if (auto it = icons.find(icon_id); it != icons.end()) {
+        ref = it->second.ref;
+      } else {
+        return;
+      }
+    }
+
     napi_value value;
-    NAPI_RETURN_IF_NOT_OK(
-        napi_get_reference_value(env, it->second.ref, &value));
+    NAPI_THROW_RETURN_VOID_IF_NOT_OK(
+        env, napi_get_reference_value(env, ref, &value));
+
     NotifyIconObject* object;
-    NAPI_RETURN_IF_NOT_OK(napi_get_value(env, value, &object));
-    NAPI_RETURN_IF_NOT_OK(
-        object->select(env, value, right_button, mouse_x, mouse_y));
-  }
+    NAPI_THROW_RETURN_VOID_IF_NOT_OK(env, napi_get_value(env, value, &object));
+
+    napi_value event;
+    NAPI_THROW_RETURN_VOID_IF_NOT_OK(
+        env, napi_create_object(env, &event,
+                                {
+                                    {"target", value},
+                                    {"rightButton", args.right_button},
+                                    {"mouseX", args.mouse_x},
+                                    {"mouseY", args.mouse_y},
+                                }));
+
+    object->select_callback(value, {event});
+  });
+}
+
+template <typename Fn>
+napi_status napi_add_env_cleanup_hook(napi_env env, Fn fn) {
+  auto fn_ptr = std::make_unique<Fn>(std::move(fn));
+  NAPI_RETURN_IF_NOT_OK(napi_add_env_cleanup_hook(
+      env, [](void* ptr) { (*static_cast<Fn*>(ptr))(); }, fn_ptr.get()));
+  fn_ptr.release();
   return napi_ok;
 }
-
-LRESULT messageWndProc(HWND hwnd, UINT msg, WPARAM wParam, LPARAM lParam) {
-  switch (msg) {
-    case WM_CREATE: {
-      auto pcs = (CREATESTRUCTW*)lParam;
-      SetWindowLongPtrW(hwnd, GWLP_USERDATA, (LONG_PTR)pcs->lpCreateParams);
-      break;
-    }
-    case WM_TRAYICON_CALLBACK: {
-      switch (LOWORD(lParam)) {
-        case NIN_SELECT:
-        case NIN_KEYSELECT:
-        case WM_CONTEXTMENU:
-          // Required to hide menu after select or click-outside, if you are
-          // going to show a menu. Firing now rather than later as we can only
-          // take foreground while responding to user interaction.
-          SetForegroundWindow(hwnd);
-
-          auto env = (napi_env)(void*)GetWindowLongPtrW(hwnd, GWLP_USERDATA);
-          auto icon_id = HIWORD(lParam);
-          auto right_button = LOWORD(lParam) == WM_CONTEXTMENU;
-          // needs sign-extension for multiple monitors
-          // Equivalent to GET_X_LPARAM
-          auto mouse_x = (int16_t)LOWORD(wParam);
-          auto mouse_y = (int16_t)HIWORD(wParam);
-
-          if (auto env_data = get_env_data(env); env_data) {
-            NapiHandleScope scope;
-            // if this fails, we can't even throw an error!
-            NAPI_FATAL_IF_NOT_OK(scope.open(env));
-            if (notify_select(env_data, icon_id, right_button, mouse_x,
-                              mouse_y) != napi_ok) {
-              napi_throw_async_last_error(env);
-            }
-          }
-      }
-      break;
-    }
-  }
-
-  return DefWindowProc(hwnd, msg, wParam, lParam);
-}
-
-ATOM windowClassId = 0;
 
 std::tuple<napi_status, EnvData*> create_env_data(napi_env env) {
   // Lock for the whole method just so we know we'll get
@@ -142,78 +111,29 @@ std::tuple<napi_status, EnvData*> create_env_data(napi_env env) {
   auto data = &env_datas[env];
   data->env = env;
 
-  if (auto status =
-          napi_add_env_cleanup_hook(env,
-                                    [](void* args) {
-                                      std::lock_guard lock{env_datas_mutex};
-                                      // This will also fire all the required
-                                      // destructors.
-                                      env_datas.erase((napi_env)args);
-                                    },
-                                    env);
+  if (auto status = data->icon_message_loop.run_on_env_thread.create(env);
       status != napi_ok) {
     return {status, nullptr};
   }
 
-  uv_loop_s* loop = nullptr;
-  if (auto status = napi_get_uv_event_loop(env, &loop); status != napi_ok) {
+  if (auto status =
+          napi_add_env_cleanup_hook(env,
+                                    [=] {
+                                      std::lock_guard lock{env_datas_mutex};
+                                      // This will also fire all the required
+                                      // destructors.
+                                      env_datas.erase(env);
+                                    });
+      status != napi_ok) {
     return {status, nullptr};
   }
-  uv_idle_init(loop, &data->message_pump_idle);
-
-  auto hInstance = get_image_instance();
-
-  if (!windowClassId) {
-    WNDCLASSW wc = {};
-    wc.lpszClassName = L"Tray Message Window";
-    wc.lpfnWndProc = messageWndProc;
-    wc.hInstance = hInstance;
-    windowClassId = RegisterClassW(&wc);
-    if (!windowClassId) {
-      napi_throw_win32_error(env, "RegisterClassW");
-      return {napi_pending_exception, data};
-    }
-  }
-
-  // Please give me the real screen positions of clicks, but don't break other
-  // addons.
-  auto SetThreadDpiAwarenessContext =
-      (DPI_AWARENESS_CONTEXT(*)(DPI_AWARENESS_CONTEXT))GetProcAddress(
-          GetModuleHandle(L"user32"), "SetThreadDpiAwarenessContext");
-  if (!SetThreadDpiAwarenessContext) {
-    SetThreadDpiAwarenessContext = [](DPI_AWARENESS_CONTEXT context) {
-      return context;
-    };
-  }
-
-  auto old_dpi_awareness =
-      SetThreadDpiAwarenessContext(DPI_AWARENESS_CONTEXT_PER_MONITOR_AWARE_V2);
-
-  HWND hwnd = CreateWindowW((LPWSTR)windowClassId, L"Tray Message Window",
-                            0,             // style
-                            0,             // x
-                            0,             // y
-                            0,             // width
-                            0,             // height
-                            HWND_MESSAGE,  // parent
-                            nullptr,       // menu
-                            hInstance,     // instance
-                            env);          // param
-
-  SetThreadDpiAwarenessContext(old_dpi_awareness);
-
-  if (!hwnd) {
-    napi_throw_win32_error(env, "CreateWindowW");
-    return {napi_pending_exception, data};
-  }
-
-  data->msg_hwnd = hwnd;
 
   return {napi_ok, data};
 }
 
 EnvData::~EnvData() {
   for (auto& pair : icons) {
-    delete_notify_icon({msg_hwnd, pair.second.id, pair.second.guid});
+    delete_notify_icon(
+        {icon_message_loop.hwnd, pair.second.id, pair.second.guid});
   }
 }

@@ -13,6 +13,7 @@
                 "src/icon-object.cc",
                 "src/menu-object.cc",
                 "src/notify-icon.cc",
+                "src/notify-icon-message-loop.cc",
                 "src/notify-icon-object.cc",
                 "src/reg-icon-stream.cc",
                 "src/parse_guid.cc",

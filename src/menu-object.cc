@@ -228,17 +228,23 @@ napi_value export_Menu_showSync(napi_env env, napi_callback_info info) {
 
   HMENU menu = this_object->menu;
 
-  auto item_id = (int32_t)TrackPopupMenuEx(
-      menu,
-      GetSystemMetrics(SM_MENUDROPALIGNMENT) | TPM_RETURNCMD | TPM_NONOTIFY,
-      mouse_x, mouse_y, env_data->msg_hwnd, nullptr);
-  if (!item_id) {
-    if (auto code = GetLastError(); code) {
-      napi_throw_win32_error(env, "TrackPopupMenuEx", (HRESULT)code);
-      return nullptr;
-    }
-  }
+  int item_id = 0;
+  DWORD error = 0;
 
+  env_data->icon_message_loop.run_on_msg_thread_blocking([=, &item_id, &error] {
+    item_id = (int32_t)TrackPopupMenuEx(
+        menu,
+        GetSystemMetrics(SM_MENUDROPALIGNMENT) | TPM_RETURNCMD | TPM_NONOTIFY,
+        mouse_x, mouse_y, env_data->icon_message_loop.hwnd, nullptr);
+    if (!item_id) {
+      error = GetLastError();
+    }
+  });
+
+  if (error) {
+    napi_throw_win32_error(env, "TrackPopupMenuEx", error);
+    return nullptr;
+  }
   napi_value result;
   NAPI_THROW_RETURN_NULL_IF_NOT_OK(env, napi_create(env, item_id, &result));
   return result;

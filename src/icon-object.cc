@@ -1,5 +1,7 @@
 #include "icon-object.hh"
 
+#include "unique.hh"
+
 napi_status napi_get_value(napi_env env, napi_value value,
                            icon_size_t* result) {
   NAPI_RETURN_IF_NOT_OK(
