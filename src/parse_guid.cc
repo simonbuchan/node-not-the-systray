@@ -1,14 +1,16 @@
 #include "parse_guid.hh"
 
+#include <cctype>
+
 template <typename T>
 bool parse_hex(std::string_view source, T* result) {
   T value = (T)0;
   for (auto c : source) {
     value <<= (T)4;
-    if (isdigit(c))
+    if (std::isdigit(c))
       value |= (T)(c - '0');
-    else if (isxdigit(c))
-      value |= (T)(toupper(c) - 'A' + 10);
+    else if (std::isxdigit(c))
+      value |= (T)(std::toupper(c) - 'A' + 10);
     else
       return false;
   }

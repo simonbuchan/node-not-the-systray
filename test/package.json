@@ -9,8 +9,8 @@
         "not-the-systray": "link:.."
     },
     "devDependencies": {
-        "@types/node": "^8.0.0",
-        "typescript": "~3.3.3333",
-        "ts-node": "^8.0.3"
+        "@types/node": "^12.7.2",
+        "typescript": "~3.6.2",
+        "ts-node": "^8.3.0"
     }
 }
