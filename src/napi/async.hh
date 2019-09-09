@@ -225,8 +225,18 @@ struct NapiThreadsafeFunction : NapiThreadsafeFunctionBase {
   using CallData = std::function<void(napi_env, napi_value)>;
 
   napi_status create(napi_env env, int max_queue_size = 0) {
-    return NapiThreadsafeFunctionBase::create(env, nullptr, call_js, nullptr,
-                                              max_queue_size);
+    napi_value func = nullptr;
+    const napi_node_version* v;
+    if (napi_get_node_version(env, &v) != napi_ok ||
+        std::tuple(v->major, v->minor) < std::tuple(12u, 6u)) {
+      // Hack: create an unused JS func to keep node < v12.6 happy, this
+      //       should let us run all the way back to v10.6.
+      NAPI_RETURN_IF_NOT_OK(napi_create_function(
+          env, "", 0,
+          [](napi_env, napi_callback_info) -> napi_value { return nullptr; },
+          nullptr, &func));
+    }
+    return create(env, func, max_queue_size);
   }
 
   napi_status create(napi_env env, napi_value func, int max_queue_size = 0) {
