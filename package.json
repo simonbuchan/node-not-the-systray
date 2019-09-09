@@ -32,7 +32,7 @@
         "build": "node build build"
     },
     "dependencies": {
-        "@types/node": ">= 8.0.0"
+        "@types/node": "*"
     },
     "devDependencies": {
         "node-gyp": "^5.0.3"

@@ -11,6 +11,12 @@ async function main() {
     // reuse existing .node-gyp files
     gyp.devDir = `${os.homedir()}/.node-gyp`;
     gyp.parseArgv(process.argv);
+
+    // Override default target version.
+    if (!gyp.opts.target) {
+        gyp.opts.target = 'v10.16.0';
+    }
+
     for (const { name, args } of gyp.todo) {
         await promisify(gyp.commands[name])(args);
         if (name == "build") {

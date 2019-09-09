@@ -6,6 +6,7 @@
 #include <string_view>
 #include <vector>
 
+#define NAPI_VERSION 4
 #include <node_api.h>
 
 using namespace std::string_literals;
