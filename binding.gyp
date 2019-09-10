@@ -33,6 +33,12 @@
                     "DisableSpecificWarnings": [
                         4100
                     ]
+                },
+                # https://github.com/nodejs/node/issues/29501
+                "VCLinkerTool": {
+                    "OptimizeReferences": 2,             # /OPT:REF
+                    "EnableCOMDATFolding": 2,            # /OPT:ICF
+                    "LinkIncremental": 1                # disable incremental linking
                 }
             }
         }

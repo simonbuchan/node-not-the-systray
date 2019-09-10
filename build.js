@@ -6,6 +6,10 @@ const node_gyp = require('node-gyp');
 // stripped down version of node-gyp/bin/node-gyp.js
 // runs main node-gyp logic, but copies .node output to root
 
+function parseGyp(path) {
+    return JSON.parse(fs.readFileSync(path, 'utf8').replace(/\#.+\n/, ''))
+}
+
 async function main() {
     const gyp = node_gyp();
     // reuse existing .node-gyp files
@@ -20,9 +24,9 @@ async function main() {
     for (const { name, args } of gyp.todo) {
         await promisify(gyp.commands[name])(args);
         if (name == "build") {
-            const binding = JSON.parse(fs.readFileSync(`${__dirname}/binding.gyp`));
+            const binding = parseGyp(`${__dirname}/binding.gyp`);
             // Compute build output dir the same way as node-gyp/lib/build.js
-            const config = JSON.parse(fs.readFileSync(`${__dirname}/build/config.gypi`, 'utf8').replace(/\#.+\n/, ''));
+            const config = parseGyp(`${__dirname}/build/config.gypi`);
             let buildType = config.target_defaults.default_configuration;
             if ('debug' in gyp.opts) {
                 buildType = gyp.opts.debug ? 'Debug' : 'Release';
