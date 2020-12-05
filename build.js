@@ -7,7 +7,7 @@ const node_gyp = require('node-gyp');
 // runs main node-gyp logic, but copies .node output to root
 
 function parseGyp(path) {
-    return JSON.parse(fs.readFileSync(path, 'utf8').replace(/\#.+\n/, ''))
+    return JSON.parse(fs.readFileSync(path, 'utf8').replace(/\#.+\n/g, '\n'))
 }
 
 async function main() {
